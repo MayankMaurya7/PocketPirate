@@ -8,3 +8,6 @@
 
 /** Placeholder marker confirming the shared package resolves from clients. */
 export const SHARED_PACKAGE_NAME = "@expense-tracker/shared" as const;
+
+/** Generated Supabase schema types (`Database`, `Tables`, `Enums`, …). */
+export * from "./database.types";
