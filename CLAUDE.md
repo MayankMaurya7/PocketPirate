@@ -50,8 +50,11 @@ supabase/           Supabase project — migrations & Edge Functions (later phas
 
 - **TypeScript strict mode** everywhere (`strict: true`). No `any` escape
   hatches without justification.
-- **Money is stored as integer paise** (smallest currency unit) — never floats.
-  Format to rupees only at the display edge.
+- **Money is stored as integer minor units** (paise for INR, cents for USD —
+  the smallest unit of each currency) — never floats. All arithmetic is done on
+  these integers for exactness. Every expense also carries an ISO 4217
+  `currency` code, snapshotted at entry time. Convert and format to the display
+  currency (₹, $, €, …) only at the display edge.
 - **pnpm only.** Install with `pnpm install`; run tasks through Turbo
   (`pnpm build`, `pnpm dev`, `pnpm lint`).
 - Cross-client code goes in `packages/shared`, not duplicated per app.
