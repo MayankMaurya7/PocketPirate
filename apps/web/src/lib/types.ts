@@ -10,3 +10,8 @@ export type CategoryOption = Pick<
 export type ExpenseWithCategory = Tables<"expenses"> & {
   categories: CategoryOption | null;
 };
+
+/** A full category row plus how many (visible) expenses reference it. */
+export type CategoryWithUsage = Tables<"categories"> & {
+  expenseCount: number;
+};

@@ -143,9 +143,17 @@ Done and on `main`:
   Money helpers live in `packages/shared/src/money.ts` (string-parse to
   integer minor units, Intl-based formatting, `DEFAULT_CURRENCY = "INR"`).
   Group expense entry comes with the Groups step.
+- **Category management UI** at `/categories`: server-fetched list with
+  per-category expense counts (PostgREST `expenses(count)` aggregate under
+  RLS), add/edit/delete via client components (`CategoryForm`, `AddCategory`,
+  `CategoryItem`). Name + colour (preset swatches or native colour input);
+  `icon` column exists but is not exposed in the UI yet. Unique-name violation
+  (23505) mapped to a friendly message. Delete confirm states how many expenses
+  become uncategorised (FK is `on delete set null`). Shared `AppHeader`
+  (wordmark + Expenses/Categories nav + sign-out) used by `/` and
+  `/categories`; list-row icons live in `components/icons.tsx`.
 
 Not yet built (immediate next steps, in rough order):
-- Category management UI.
 - Filtered list views (by category / user / history).
 - Groups UI (create, add members, group expense views).
 - Stats dashboard (today/week/month/year + charts).
