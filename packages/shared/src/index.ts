@@ -11,3 +11,6 @@ export const SHARED_PACKAGE_NAME = "@expense-tracker/shared" as const;
 
 /** Generated Supabase schema types (`Database`, `Tables`, `Enums`, …). */
 export * from "./database.types";
+
+/** Integer-minor-unit money helpers (parse, format). */
+export * from "./money";
