@@ -2,22 +2,10 @@
 
 import { useState } from "react";
 
-import { ExpenseForm } from "@/components/expense-form";
-import type { CategoryOption, GroupOption } from "@/lib/types";
+import { GroupForm } from "@/components/group-form";
 
-/** "Add expense" button that expands into the add form. */
-export function AddExpense({
-  categories,
-  groups,
-  userId,
-  defaultGroupId,
-}: {
-  categories: CategoryOption[];
-  groups: GroupOption[];
-  userId: string;
-  /** Pre-select a group (used on that group's page). */
-  defaultGroupId?: string;
-}) {
+/** "New group" button that expands into the create form. */
+export function AddGroup() {
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -27,7 +15,7 @@ export function AddExpense({
         onClick={() => setOpen(true)}
         className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
       >
-        Add expense
+        New group
       </button>
     );
   }
@@ -35,15 +23,9 @@ export function AddExpense({
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        New expense
+        New group
       </h2>
-      <ExpenseForm
-        categories={categories}
-        groups={groups}
-        userId={userId}
-        defaultGroupId={defaultGroupId}
-        onDone={() => setOpen(false)}
-      />
+      <GroupForm onDone={() => setOpen(false)} />
     </div>
   );
 }

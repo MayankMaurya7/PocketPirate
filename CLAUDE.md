@@ -142,7 +142,6 @@ Done and on `main`:
   handles add and inline edit (amount, category picker, date, description).
   Money helpers live in `packages/shared/src/money.ts` (string-parse to
   integer minor units, Intl-based formatting, `DEFAULT_CURRENCY = "INR"`).
-  Group expense entry comes with the Groups step.
 - **Category management UI** at `/categories`: server-fetched list with
   per-category expense counts (PostgREST `expenses(count)` aggregate under
   RLS), add/edit/delete via client components (`CategoryForm`, `AddCategory`,
@@ -152,10 +151,76 @@ Done and on `main`:
   become uncategorised (FK is `on delete set null`). Shared `AppHeader`
   (wordmark + Expenses/Categories nav + sign-out) used by `/` and
   `/categories`; list-row icons live in `components/icons.tsx`.
+- **Filtered list views** on `/`: filter by category (incl. "Uncategorised")
+  and date range (Today / This week / This month / This year / Custom
+  from–to). Filter state lives in URL search params (`category`, `range`,
+  `from`, `to`) — `lib/expense-filters.ts` parses/validates them server-side
+  (UUID + date shape checks, swaps inverted bounds, ignores a preset without
+  bounds) and the server component applies them to the query. Preset bounds
+  are computed in the browser (`presetDateRange` in
+  `packages/shared/src/dates.ts`, Monday-start weeks) so they follow the user's
+  local timezone. The filter bar mirrors the chosen filters optimistically
+  (`useOptimistic` + `useTransition` around `router.replace`) so chips select
+  instantly instead of after the server round-trip, with an "Updating…" hint
+  while pending. Shows a count + per-currency total for the filtered set and
+  a distinct "no matching expenses" empty state. "By user" filtering is
+  deferred to the Groups step (only meaningful for group expenses).
+
+- **Migration 003** applied — `profiles.email` (mirror of `auth.users.email`;
+  set in `handle_new_user`, kept in sync by an `on_auth_user_email_updated`
+  trigger, backfilled) + `public.add_group_member_by_email(_group_id, _email)`
+  SECURITY DEFINER RPC (owner check runs BEFORE the email lookup so non-owners
+  learn nothing; user-facing error messages are raised verbatim and shown
+  as-is by the client; EXECUTE granted to `authenticated` only). Accepted
+  trade-off: an owner learns whether an email has an account — an invite-link
+  flow would avoid this but needs its own table (backlog). Co-members can see
+  each other's email via the existing profiles SELECT policy.
+- **Groups UI (membership)**: `/groups` lists the user's groups (member count,
+  Owner badge) with a create form (`AddGroup` → `GroupForm`, navigates to the
+  new group; the id is minted client-side with `crypto.randomUUID()` because
+  `.insert().select()` fails RLS — RETURNING is checked against the SELECT
+  policy before the AFTER trigger makes the creator a member). `/groups/[id]`
+  shows the group (404 for non-members — RLS
+  filters, page calls `notFound()`), members list (`MemberItem`: avatar or
+  initial, display name → email → "Unknown member" via `memberLabel`, role,
+  "You"), owner-only add-by-email (`AddMember` → RPC), owner-only remove
+  member, rename/delete group (`GroupActions`), leave group for members and
+  co-owners (the sole owner cannot leave — delete instead; UI-only guard, the
+  DB-level last-owner guard stays in the backlog). "Groups" added to
+  `AppHeader` nav; `isUuid` exported from `lib/expense-filters.ts`.
+- **Group expenses**: `ExpenseForm` has a Group picker (Personal / each group
+  / "+ New group…" which creates the group inline, client-minted id, then the
+  expense — if the expense insert fails the form re-targets the now-existing
+  group so a retry doesn't duplicate it) and, for a group, a "Paid by" member
+  picker (sets `user_id`; `created_by` is always self; RLS enforces both).
+  Editing can move an expense between Personal and groups. `ExpenseItem`
+  shows group name + "Paid by …" and hides edit/delete unless
+  `created_by` is the viewer; another member's category is invisible under
+  RLS (categories are per-user) so their rows show no category label rather
+  than "Uncategorised". Home `/` list: `group` + `member` URL params
+  (`Personal` default = own, `group_id is null`; a group = all members'
+  expenses; `member` narrows by payer). Group detail page shows the group's
+  expenses (add preset to the group, count + totals, "Filter" link to
+  `/?group=<id>`). Shared bits: `lib/expenses.ts` (`EXPENSE_SELECT` embed —
+  `payer:profiles!expenses_user_id_fkey` because expenses has two FKs to
+  profiles — `GROUP_OPTION_SELECT`, `toGroupOption`, `totalsByCurrency`) and
+  `components/expense-list.tsx` (list card + empty state). `lib/types.ts`:
+  `ExpenseListItem` (replaces `ExpenseWithCategory`), `GroupOption`,
+  `GroupMemberOption`.
+- **Global cursor fix**: Tailwind v4 preflight resets buttons to
+  `cursor: default`; `globals.css` restores `cursor: pointer` on enabled
+  buttons / `[role=button]` / submit inputs / `summary` in `@layer base`.
 
 Not yet built (immediate next steps, in rough order):
-- Filtered list views (by category / user / history).
-- Groups UI (create, add members, group expense views).
+- **Expense splitting (next)**: migration adding `expense_splits`
+  (`expense_id`, `user_id`, `amount_minor_units`; PK (expense_id, user_id);
+  RLS: read if you can read the expense, write only by the expense's
+  `created_by`, participants must be group members; sum must equal the
+  expense amount). Form: "Split between" member checkboxes (default: all
+  current members, equal split, remainder minor units distributed to the
+  first participants), editable later as members join. Group page: per-member
+  balance (paid − owed). Personal expenses have no splits. "Simplify debts"
+  stays in the backlog.
 - Stats dashboard (today/week/month/year + charts).
 - PWA config (manifest + service worker).
 - Deploy to Vercel.
@@ -169,9 +234,10 @@ Not yet built (immediate next steps, in rough order):
   setting in the profile.
 - **Group reports & charts**: category share (pie/donut), per-person breakdown,
   spending over time — a read/aggregation feature, no schema change needed.
-- **Expense splitting / Splitwise-style** for trip groups: live balances +
-  "simplify debts" (net out intermediary debts into fewer payments). Needs a new
-  `expense_splits` table — additive later migration.
+- **"Simplify debts"** (net out intermediary debts into fewer payments) on
+  top of expense splits, plus settle-up records.
+- **Invite links** for groups (token table + join RPC) as an alternative to
+  add-by-email, which reveals whether an email has an account.
 - **Group ownership transfer** + last-owner guard: currently a sole owner can
   leave via group_members_delete, stranding a group. Add a
   `transfer_group_ownership` RPC or a guard trigger. Later migration.

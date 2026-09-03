@@ -8,15 +8,31 @@ import { formatMinorUnits } from "@expense-tracker/shared";
 import { createClient } from "@/lib/supabase/client";
 import { ExpenseForm } from "@/components/expense-form";
 import { PencilIcon, TrashIcon } from "@/components/icons";
-import type { CategoryOption, ExpenseWithCategory } from "@/lib/types";
+import {
+  type CategoryOption,
+  type ExpenseListItem,
+  type GroupOption,
+  memberLabel,
+} from "@/lib/types";
 
-/** One expense row: category badge, description, date, amount, edit/delete. */
+/**
+ * One expense row: category dot, description, meta line, amount, and — only
+ * for expenses this user entered — edit/delete. RLS already limits writes to
+ * `created_by`; hiding the buttons just avoids offering an action that would
+ * fail.
+ */
 export function ExpenseItem({
   expense,
   categories,
+  groups,
+  userId,
+  showGroup,
 }: {
-  expense: ExpenseWithCategory;
+  expense: ExpenseListItem;
   categories: CategoryOption[];
+  groups: GroupOption[];
+  userId: string;
+  showGroup: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -51,6 +67,8 @@ export function ExpenseItem({
       <li className="p-5">
         <ExpenseForm
           categories={categories}
+          groups={groups}
+          userId={userId}
           expense={expense}
           onDone={() => setEditing(false)}
         />
@@ -59,6 +77,32 @@ export function ExpenseItem({
   }
 
   const category = expense.categories;
+  const enteredByMe = expense.created_by === userId;
+
+  const meta: string[] = [];
+  // Categories are private per user, so another member's category is not
+  // visible to us — say nothing rather than a misleading "Uncategorised".
+  if (category) {
+    meta.push(category.name);
+  } else if (enteredByMe) {
+    meta.push("Uncategorised");
+  }
+  meta.push(
+    new Date(`${expense.expense_date}T00:00:00`).toLocaleDateString(
+      undefined,
+      { day: "numeric", month: "short", year: "numeric" },
+    ),
+  );
+  if (expense.group_id) {
+    if (showGroup && expense.groups) {
+      meta.push(expense.groups.name);
+    }
+    meta.push(
+      expense.user_id === userId
+        ? "Paid by you"
+        : `Paid by ${memberLabel(expense.payer)}`,
+    );
+  }
 
   return (
     <li className="flex items-center gap-4 px-5 py-4">
@@ -72,12 +116,8 @@ export function ExpenseItem({
         <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
           {expense.description || category?.name || "Expense"}
         </p>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-          {category?.name ?? "Uncategorised"} ·{" "}
-          {new Date(`${expense.expense_date}T00:00:00`).toLocaleDateString(
-            undefined,
-            { day: "numeric", month: "short", year: "numeric" },
-          )}
+        <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+          {meta.join(" · ")}
         </p>
         {error && (
           <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -90,26 +130,28 @@ export function ExpenseItem({
         {formatMinorUnits(expense.amount_minor_units, expense.currency)}
       </span>
 
-      <div className="flex shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          disabled={pending}
-          aria-label="Edit expense"
-          className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-        >
-          <PencilIcon />
-        </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={pending}
-          aria-label="Delete expense"
-          className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-        >
-          <TrashIcon />
-        </button>
-      </div>
+      {enteredByMe && (
+        <div className="flex shrink-0 gap-1">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={pending}
+            aria-label="Edit expense"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <PencilIcon />
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            aria-label="Delete expense"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      )}
     </li>
   );
 }

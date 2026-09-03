@@ -30,3 +30,21 @@ export function TrashIcon() {
     </svg>
   );
 }
+
+export function ChevronRightIcon() {
+  return (
+    <svg {...iconProps} className="h-4 w-4 shrink-0 text-zinc-400">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+export function UserMinusIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 11h-6" />
+    </svg>
+  );
+}
