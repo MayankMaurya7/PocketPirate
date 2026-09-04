@@ -17,3 +17,6 @@ export * from "./money";
 
 /** Calendar-date helpers (local `YYYY-MM-DD` strings, preset ranges). */
 export * from "./dates";
+
+/** Spending aggregation (per-period, per-category, per-day/month buckets). */
+export * from "./stats";

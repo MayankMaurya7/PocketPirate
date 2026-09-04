@@ -11,7 +11,7 @@ export function AppHeader({
   current,
 }: {
   email: string;
-  current: "expenses" | "groups" | "categories";
+  current: "expenses" | "stats" | "groups" | "categories";
 }) {
   return (
     <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -37,6 +37,17 @@ export function AppHeader({
               }`}
             >
               Expenses
+            </Link>
+            <Link
+              href="/stats"
+              aria-current={current === "stats" ? "page" : undefined}
+              className={`${navLinkClasses} ${
+                current === "stats"
+                  ? "text-zinc-900 dark:text-zinc-50"
+                  : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              Stats
             </Link>
             <Link
               href="/groups"

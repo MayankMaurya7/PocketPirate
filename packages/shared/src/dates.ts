@@ -56,3 +56,91 @@ export function presetDateRange(
 
   return { from: toLocalDateString(start), to };
 }
+
+/** Parse a `YYYY-MM-DD` string into a Date at local midnight. */
+export function fromLocalDateString(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** A Date's local calendar month as `YYYY-MM`. */
+export function toLocalMonthString(date: Date): string {
+  return toLocalDateString(date).slice(0, 7);
+}
+
+/** Every calendar day from `from` to `to` inclusive, as `YYYY-MM-DD`. */
+export function listDays(from: string, to: string): string[] {
+  const days: string[] = [];
+  const cursor = fromLocalDateString(from);
+  const end = fromLocalDateString(to);
+  while (cursor <= end) {
+    days.push(toLocalDateString(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+/** Every calendar month from `from` to `to` inclusive, as `YYYY-MM`. */
+export function listMonths(from: string, to: string): string[] {
+  const months: string[] = [];
+  const cursor = fromLocalDateString(from);
+  cursor.setDate(1);
+  const end = fromLocalDateString(to);
+  while (cursor <= end) {
+    months.push(toLocalMonthString(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
+}
+
+/**
+ * Move a date by whole months, clamping the day to the target month's length
+ * (31 Mar − 1 month → 28 Feb, not 3 Mar as `setMonth` alone would give).
+ */
+function shiftMonths(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0,
+  ).getDate();
+  target.setDate(Math.min(date.getDate(), lastDay));
+  return target;
+}
+
+/**
+ * The like-for-like slice of the previous period: `presetDateRange` shifted
+ * back one period, so month-to-date is compared with last month up to the
+ * same day rather than with the whole of last month. Today → yesterday,
+ * week → the same weekdays last week, month → same days last month, year →
+ * same dates last year.
+ */
+export function previousPeriodRange(
+  preset: DateRangePreset,
+  now: Date = new Date(),
+): { from: string; to: string } {
+  const current = presetDateRange(preset, now);
+  const from = fromLocalDateString(current.from);
+  const to = fromLocalDateString(current.to);
+
+  switch (preset) {
+    case "today":
+      from.setDate(from.getDate() - 1);
+      to.setDate(to.getDate() - 1);
+      return { from: toLocalDateString(from), to: toLocalDateString(to) };
+    case "week":
+      from.setDate(from.getDate() - 7);
+      to.setDate(to.getDate() - 7);
+      return { from: toLocalDateString(from), to: toLocalDateString(to) };
+    case "month":
+      return {
+        from: toLocalDateString(shiftMonths(from, -1)),
+        to: toLocalDateString(shiftMonths(to, -1)),
+      };
+    case "year":
+      return {
+        from: toLocalDateString(shiftMonths(from, -12)),
+        to: toLocalDateString(shiftMonths(to, -12)),
+      };
+  }
+}

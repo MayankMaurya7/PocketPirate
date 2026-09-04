@@ -26,6 +26,12 @@ export type ExpenseListItem = Tables<"expenses"> & {
   expense_splits: ExpenseSplit[];
 };
 
+/** The lean expense projection the stats page aggregates. */
+export type StatsExpense = Pick<
+  Tables<"expenses">,
+  "id" | "amount_minor_units" | "currency" | "expense_date" | "category_id"
+>;
+
 /** A full category row plus how many (visible) expenses reference it. */
 export type CategoryWithUsage = Tables<"categories"> & {
   expenseCount: number;

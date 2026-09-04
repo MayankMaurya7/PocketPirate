@@ -94,3 +94,21 @@ export function splitEqually(total: number, count: number): number[] {
     base + (index < remainder ? 1 : 0),
   );
 }
+
+/**
+ * Compact currency formatting for tight spaces such as axis ticks and stat
+ * tiles: 123456 minor units → "₹1.2K" (or "₹1.2L" under an Indian locale).
+ * Display-edge only.
+ */
+export function formatMinorUnitsCompact(
+  minorUnits: number,
+  currency: string,
+  locale?: string,
+): string {
+  const exponent = minorUnitExponent(currency);
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    notation: "compact",
+  }).format(minorUnits / 10 ** exponent);
+}

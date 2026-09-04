@@ -266,8 +266,36 @@ Done and on `main`:
   with 42501 at the grant layer, before RLS. `postgres` / `service_role`
   untouched.
 
+- **Stats dashboard** at `/stats` ("Stats" in `AppHeader` nav): personal
+  expenses only (`user_id` = self, `group_id is null`, `status =
+  'confirmed'`; group reports stay in the backlog). The server page fetches
+  lean rows (`StatsExpense`) since 1 Jan of last year in 1000-row pages
+  (PostgREST `max_rows`) and hands them to the client `StatsDashboard`,
+  which computes everything in the browser so periods follow the user's
+  local timezone (`useSyncExternalStore` mounted gate — "now" only exists
+  after hydration; placeholders render until then). KPI row = four
+  `StatTile` buttons (Today / This week / This month / This year: total per
+  currency, count, % change vs the like-for-like previous period —
+  `previousPeriodRange` in `packages/shared/src/dates.ts` shifts the
+  month-to-date range back one month/year with day clamping) which also
+  select the period for the charts below (default: month). Charts:
+  `CategoryBars` (horizontal bars, largest first, category colour dot +
+  amount + share, "Uncategorised" for null, "Deleted category" if the id no
+  longer resolves) and `SpendColumns` (inline-SVG single-series columns,
+  daily for week/month, monthly for year, hidden for Today; hover/focus
+  tooltip per column, max column direct-labelled, nice tick steps, container
+  measured with `ResizeObserver` so text never scales). Both cards have a
+  "Show as table" `<details>` twin. Charts use the dominant currency of the
+  period with a note when others are excluded; tiles go compact ("₹1.2L")
+  from 1,00,000 major units. Aggregation lives in
+  `packages/shared/src/stats.ts` (`expensesInRange`, `sumByCurrency`,
+  `totalsByCategory`, `totalsByBucket`, `percentChange`); date helpers
+  `listDays`/`listMonths`/`fromLocalDateString`; money
+  `formatMinorUnitsCompact`. Single-series colour is the brand emerald
+  (validated ≥3:1 on both surfaces), category identity comes from the dot
+  beside the label, not the bar.
+
 Not yet built (immediate next steps, in rough order):
-- Stats dashboard (today/week/month/year + charts).
 - PWA config (manifest + service worker).
 - Deploy to Vercel.
 
@@ -278,8 +306,12 @@ Not yet built (immediate next steps, in rough order):
 - **Location-based currency default** (app logic): if the user grants location,
   default their currency to the local one; else USD; also a preferred-currency
   setting in the profile.
-- **Group reports & charts**: category share (pie/donut), per-person breakdown,
-  spending over time — a read/aggregation feature, no schema change needed.
+- **Group reports & charts**: extend `/stats` with a group scope —
+  per-person breakdown and spending over time (other members' categories
+  are invisible under RLS, so category share needs a design decision) — a
+  read/aggregation feature, no schema change needed. Also decide whether
+  personal stats should include group expenses the user paid (or their
+  split share); today they are excluded.
 - **"Simplify debts"** (net out intermediary debts into fewer payments) on
   top of expense splits, plus settle-up records.
 - **Splits vs. departed/deleted members**: show former participants in
@@ -296,8 +328,17 @@ Not yet built (immediate next steps, in rough order):
 - **Constrain `expenses.status` at insert** — a client can currently set
   `confirmed` directly. Only matters once Phase 2's approve/reject workflow
   exists.
-- **Custom SMTP** for Supabase auth emails before production (free-tier built-in
-  SMTP is heavily rate-limited).
+- **Custom SMTP** for Supabase auth emails before production. Confirmed
+  2026-09-04: the built-in mailer returns `over_email_send_rate_limit`
+  ("email rate limit exceeded") after a few signups per hour project-wide,
+  so creating more than one or two accounts in quick succession fails at
+  `/signup`. Fix = Authentication → SMTP Settings (Resend / Brevo / Postmark
+  free tier), then raise the limit under Authentication → Rate Limits.
+  Meanwhile: create test users from the dashboard (Authentication → Users →
+  Add user, "Auto Confirm User" — no email, signup trigger still seeds
+  profile + categories), or temporarily disable "Confirm email" for local
+  dev (re-enable before real users). Also map that error code to a friendly
+  message in `login-form.tsx` (today it shows the raw Supabase text).
 - **Rename `middleware.ts` → `proxy.ts`** once Supabase docs adopt the Next 16.2
   convention (currently kept as middleware.ts to stay aligned with Supabase's
   published examples; harmless deprecation warning for now).
