@@ -13,20 +13,35 @@ const dangerButtonClasses =
   "rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/50";
 
 /**
+ * Why the viewer cannot leave right now. Both are also enforced by the
+ * group_members delete trigger (migration 007); the prop only decides
+ * whether to show the button or an explanation.
+ */
+export type LeaveBlocker = "sole-owner" | "unsettled";
+
+const LEAVE_BLOCKER_HINT: Record<LeaveBlocker, string> = {
+  "sole-owner":
+    "You are the only owner, so you can delete this group but not leave it.",
+  unsettled:
+    "Settle up before leaving: you still owe or are owed money in this group.",
+};
+
+/**
  * Group title plus the actions the caller is allowed: owners rename and
- * delete; everyone else (and co-owners) can leave. RLS enforces all of this
- * server-side — the flags only decide what to render.
+ * delete; everyone else (and co-owners) can leave. RLS and the delete
+ * trigger enforce all of this server-side — the props only decide what to
+ * render.
  */
 export function GroupActions({
   group,
   isOwner,
-  canLeave,
+  leaveBlocker,
   userId,
 }: {
   group: { id: string; name: string };
   isOwner: boolean;
-  /** False for the sole owner: leaving would strand the group. */
-  canLeave: boolean;
+  /** Set when leaving is not possible; the hint replaces the button. */
+  leaveBlocker: LeaveBlocker | null;
   userId: string;
 }) {
   const router = useRouter();
@@ -126,7 +141,7 @@ export function GroupActions({
               </button>
             </>
           )}
-          {canLeave && (
+          {!leaveBlocker && (
             <button
               type="button"
               onClick={handleLeave}
@@ -139,9 +154,9 @@ export function GroupActions({
         </div>
       </div>
 
-      {isOwner && !canLeave && (
+      {leaveBlocker && (
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          You are the only owner, so you can delete this group but not leave it.
+          {LEAVE_BLOCKER_HINT[leaveBlocker]}
         </p>
       )}
 

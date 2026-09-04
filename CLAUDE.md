@@ -355,18 +355,48 @@ Done and on `main`:
   debt rows), so amounts share one right edge across the list. Keep this
   when adding new row types or actions.
 
+- **Migration 007** applied — leave/remove guards on `group_members`:
+  `group_members_guard_delete`, a BEFORE DELETE row trigger
+  (`public.guard_group_member_delete()`, SECURITY DEFINER, owned by
+  postgres) that (1) blocks the **last owner** from leaving ("The only
+  owner cannot leave the group. Delete the group instead.") and (2) blocks
+  leaving/removal with an **open balance**, via
+  `private.has_unsettled_balance(group_id, user_id)` (EXECUTE revoked from
+  API roles; reached only through the trigger). "Open" is judged **per
+  counterparty and per currency** — the same direct pairwise ledger
+  `groupLedger` shows — not on the net position, so owing A while being
+  owed the same by B still blocks. Expenses of every status count, as in
+  the client. Messages are user-facing and shown verbatim; wording is
+  first-person when `auth.uid()` is the leaver, third-person when an owner
+  removes someone. **Cascades pass**: the trigger returns early when the
+  group or the profile row is already gone in the transaction (group
+  delete / account delete), so those paths behave as before. Self-check DO
+  block asserts the helper is SECURITY DEFINER and non-executable by
+  `authenticated`/`anon`, the trigger is exactly BEFORE DELETE ROW, and
+  the function owner. Verified live via a rolled-back DO block (11 cases:
+  clean co-owner leaves, owed owner blocked, sole owner blocked after
+  co-owner removed, net-zero-but-pairwise-open blocked, owner removing an
+  indebted member blocked, leave allowed after settling, non-owner remove
+  still 0 rows under RLS, group delete cascades with open balances, profile
+  delete cascades, helper not callable). Generated types unchanged.
+  UI: `GroupActions` takes `leaveBlocker: "sole-owner" | "unsettled" |
+  null` (replaces `canLeave`) and shows a hint instead of the Leave button
+  (`myDebts.length > 0` on the group page, matching the trigger); an
+  owner's remove attempt on an indebted member surfaces the trigger
+  message inline under the member row (existing error slot).
+
 Not yet built (immediate next steps, in rough order):
-1. **Block leaving a group with an unsettled balance** (guard trigger on
-   `group_members` delete; pair with the last-owner guard). Without it
-   balances silently stop summing to zero.
-2. **Unequal splits** (exact amounts / shares / percentages) and "paid by
+1. **Unequal splits** (exact amounts / shares / percentages) and "paid by
    multiple people" in `ExpenseForm` — schema already allows any split
    that sums to the amount.
-3. **Simplify debts** toggle per group on top of `groupLedger`.
-4. **Group activity polish**: expense detail view with every participant's
+2. **Simplify debts** toggle per group on top of `groupLedger` (note:
+   `has_unsettled_balance` is pairwise; a simplified view would need the
+   guard to judge on net position instead, or the UI would show "settled"
+   while the DB still blocks).
+3. **Group activity polish**: expense detail view with every participant's
    share; edit a recorded payment (needs an UPDATE policy for either party).
-5. **Invite links** in the members dialog.
-6. PWA config (manifest + service worker), then deploy to Vercel.
+4. **Invite links** in the members dialog.
+5. PWA config (manifest + service worker), then deploy to Vercel.
 
 ## Backlog (future — capture, don't build until scheduled)
 
@@ -386,12 +416,11 @@ Not yet built (immediate next steps, in rough order):
   (greedy largest-creditor/largest-debtor matching; pure computation, no
   schema change beyond a `groups.simplify_debts` flag). Settle-up records
   exist (migration 006).
-- **Splits vs. departed/deleted members**: former participants now appear
-  in balances as "a former member" but cannot be settled with (RLS needs
-  both parties to be members). Decide: block leaving with an unsettled
-  balance (trigger on `group_members` delete), and what happens to a
-  deleted profile's shares (today the FK cascade is rejected by the sum
-  check). Needed before any account-deletion feature.
+- **Deleted profiles vs. splits**: leaving with an open balance is now
+  blocked (migration 007), but a profile delete still cascades through
+  `group_members` (the guard lets cascades pass) and the participant's
+  split rows, which the sum check then rejects. Decide what happens to a
+  deleted profile's shares. Needed before any account-deletion feature.
 - **Custom (unequal) split amounts / shares / percentages** in the form —
   the schema already allows any split that sums to the amount; only equal
   splits are exposed. Also "paid by multiple people".
@@ -409,9 +438,10 @@ Not yet built (immediate next steps, in rough order):
 - **Invite links** for groups (token table + join RPC) as an alternative to
   add-by-email, which reveals whether an email has an account. Belongs in
   the members dialog next to add-by-email.
-- **Group ownership transfer** + last-owner guard: currently a sole owner can
-  leave via group_members_delete, stranding a group. Add a
-  `transfer_group_ownership` RPC or a guard trigger. Later migration.
+- **Group ownership transfer**: the last-owner guard (migration 007) now
+  means a sole owner can only delete the group, never hand it over. Add a
+  `transfer_group_ownership` RPC (atomic demote+promote; there is no
+  UPDATE grant/policy on `group_members` by design). Later migration.
 - **Constrain `expenses.status` at insert** — a client can currently set
   `confirmed` directly. Only matters once Phase 2's approve/reject workflow
   exists.

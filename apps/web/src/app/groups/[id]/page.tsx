@@ -9,7 +9,7 @@ import { AddExpenseFab } from "@/components/add-expense-fab";
 import { AppHeader } from "@/components/app-header";
 import { BalanceSummary } from "@/components/balance-summary";
 import { DebtItem } from "@/components/debt-item";
-import { GroupActions } from "@/components/group-actions";
+import { GroupActions, type LeaveBlocker } from "@/components/group-actions";
 import { GroupTimeline } from "@/components/group-timeline";
 import { MembersDialog } from "@/components/members-dialog";
 import {
@@ -103,6 +103,15 @@ export default async function GroupPage({
   const otherDebts = debts.filter(
     (debt) => debt.from !== userId && debt.to !== userId,
   );
+  // Mirrors the group_members delete trigger: the sole owner cannot leave,
+  // and neither can anyone with an open debt (pairwise, so a net-zero
+  // member with offsetting debts is still blocked).
+  const leaveBlocker: LeaveBlocker | null =
+    isOwner && ownerCount === 1
+      ? "sole-owner"
+      : myDebts.length > 0
+        ? "unsettled"
+        : null;
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
@@ -120,7 +129,7 @@ export default async function GroupPage({
           <GroupActions
             group={{ id: group.id, name: group.name }}
             isOwner={isOwner}
-            canLeave={!isOwner || ownerCount > 1}
+            leaveBlocker={leaveBlocker}
             userId={userId}
           />
         </div>
