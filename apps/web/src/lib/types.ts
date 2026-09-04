@@ -6,16 +6,24 @@ export type CategoryOption = Pick<
   "id" | "name" | "color" | "icon"
 >;
 
+/** One participant's share of a group expense. */
+export type ExpenseSplit = Pick<
+  Tables<"expense_splits">,
+  "user_id" | "amount_minor_units"
+>;
+
 /**
  * An expense row as the lists render it. `categories` is null when
  * uncategorised — or when another member logged it, since categories are
  * private per user and RLS hides theirs. `groups` is null for personal
  * expenses. `payer` is the profile behind `user_id` (whose expense it is).
+ * `expense_splits` is empty for personal and un-split group expenses.
  */
 export type ExpenseListItem = Tables<"expenses"> & {
   categories: CategoryOption | null;
   groups: Pick<Tables<"groups">, "id" | "name"> | null;
   payer: MemberProfile | null;
+  expense_splits: ExpenseSplit[];
 };
 
 /** A full category row plus how many (visible) expenses reference it. */

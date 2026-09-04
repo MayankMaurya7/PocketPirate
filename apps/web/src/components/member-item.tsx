@@ -3,22 +3,34 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { formatMinorUnits } from "@expense-tracker/shared";
+
 import { createClient } from "@/lib/supabase/client";
 import { UserMinusIcon } from "@/components/icons";
+import type { BalanceEntry } from "@/lib/expenses";
 import { memberLabel, type GroupMember } from "@/lib/types";
 
-/** One member row: avatar/initial, name or email, role, optional remove. */
+/**
+ * One member row: avatar/initial, name or email, role, net balance (when
+ * the group has split expenses), optional remove.
+ */
 export function MemberItem({
   groupId,
   member,
   isSelf,
   canRemove,
+  balance,
 }: {
   groupId: string;
   member: GroupMember;
   isSelf: boolean;
   /** Owner viewing someone else's row. */
   canRemove: boolean;
+  /**
+   * Non-zero net positions per currency; empty = settled up. Omit to hide
+   * the column (no split expenses in the group yet).
+   */
+  balance?: BalanceEntry[];
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -91,6 +103,30 @@ export function MemberItem({
           </p>
         )}
       </div>
+
+      {balance && (
+        <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+          {balance.length === 0 ? (
+            <span className="text-xs font-normal text-zinc-400 dark:text-zinc-500">
+              Settled up
+            </span>
+          ) : (
+            balance.map((entry) => (
+              <p
+                key={entry.currency}
+                className={
+                  entry.minorUnits > 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-red-600 dark:text-red-400"
+                }
+              >
+                {entry.minorUnits > 0 ? "+" : ""}
+                {formatMinorUnits(entry.minorUnits, entry.currency)}
+              </p>
+            ))
+          )}
+        </div>
+      )}
 
       {canRemove && (
         <button

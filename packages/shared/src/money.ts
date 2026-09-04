@@ -78,3 +78,19 @@ export function minorUnitsToInputValue(
   const exponent = minorUnitExponent(currency);
   return (minorUnits / 10 ** exponent).toFixed(exponent);
 }
+
+/**
+ * Split `total` minor units equally `count` ways. Integer arithmetic only:
+ * the remainder is handed out one unit each to the first shares, so the
+ * parts always sum exactly to `total` (e.g. 1000 ÷ 3 → [334, 333, 333]).
+ */
+export function splitEqually(total: number, count: number): number[] {
+  if (count <= 0) {
+    return [];
+  }
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, index) =>
+    base + (index < remainder ? 1 : 0),
+  );
+}

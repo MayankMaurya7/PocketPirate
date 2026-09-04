@@ -87,13 +87,22 @@ supabase/           Supabase project — migrations & Edge Functions (later phas
   the "update available" banner.
 - No Docker and no local psql on the dev machine. This means: no local Supabase
   stack, no `supabase db diff`, no direct psql. Remote CLI access works
-  (`--linked` commands). Verify RLS/schema via throwaway assertion migrations
-  (DO $$ ... $$ blocks) pushed to the linked project, then reverted, rather than
-  local tooling.
+  (`--linked` commands). **Ad-hoc SQL against the linked project:**
+  `pnpm supabase db query --linked "<sql>"` (runs as postgres, RLS bypassed).
+  To test RLS/triggers without leaving data behind, send one multi-statement
+  string: `begin; set local role authenticated; set local request.jwt.claims
+  to '{"sub":"<uuid>","role":"authenticated"}'; ...; set constraints all
+  immediate; rollback;` — errors surface in the CLI output, nothing persists.
+  Migrations should still end with a self-check DO block.
 - Supabase project: linked, ap-south-1 (Mumbai). `config.toml` exposes only
-  `public` + `graphql_public` to the API; the `private` schema is not exposed,
-  so explicit GRANTs to `authenticated` are mandatory (auto_expose_new_tables is
-  off).
+  `public` + `graphql_public` to the API; the `private` schema is not exposed.
+- **Default privileges grant ALL** (incl. UPDATE, TRUNCATE, TRIGGER, REFERENCES)
+  on every new `public` table to `anon` AND `authenticated` — Supabase's
+  project-level `ALTER DEFAULT PRIVILEGES`. Migration 001's assumption that
+  grants must be explicit was wrong. **Every new table must
+  `revoke all ... from public, anon, authenticated` before granting.**
+  Migration 005 tightened the five migration-001 tables to exactly 001's
+  intended grants.
 
 ## Current state (what exists)
 
@@ -210,17 +219,54 @@ Done and on `main`:
 - **Global cursor fix**: Tailwind v4 preflight resets buttons to
   `cursor: default`; `globals.css` restores `cursor: pointer` on enabled
   buttons / `[role=button]` / submit inputs / `summary` in `@layer base`.
+- **Migration 004** applied — `expense_splits` (`expense_id`, `user_id`,
+  `amount_minor_units > 0`; PK (expense_id, user_id); cascade from both
+  FKs; index on `user_id`). Grants: explicit REVOKE ALL then
+  `select, insert, delete` to `authenticated` (no UPDATE — the client
+  replaces the whole set). RLS: SELECT if you can read the expense (subquery
+  under the expenses policy), INSERT only by the expense's `created_by` for a
+  group expense with a participant who is a current member, DELETE only by
+  `created_by`. **Sum invariant** (no splits, OR group expense whose splits
+  sum exactly to `amount_minor_units`) is enforced by two DEFERRABLE
+  INITIALLY DEFERRED constraint triggers — `expense_splits_check_sum` (any
+  split row change) and `expenses_check_splits` (UPDATE OF
+  amount_minor_units, group_id; also refuses a group change while splits
+  exist) — both SECURITY DEFINER wrappers around
+  `private.assert_expense_splits(uuid)`. Deferred so a multi-row insert is
+  judged at commit. Verified behaviourally via `db query` (mismatched sum,
+  amount change while split, group move, non-member participant,
+  non-creator write, re-split flow).
+- **Expense splitting UI**: `ExpenseForm` shows "Split between" member
+  checkboxes for a group expense (default: everyone; new inline group: just
+  you; untick all = un-split) with a live per-member share preview
+  (`splitEqually` in `packages/shared/src/money.ts`: floor + remainder one
+  unit each to the first participants in member order). Save order keeps the
+  DB invariant at every request boundary: delete splits → update expense →
+  insert splits; on create, the expense id is client-minted and a failed
+  split insert leaves the form open with `savedExpenseId` so a retry updates
+  rather than duplicates. Splits are only rewritten when amount, group or
+  participant set changed. `ExpenseListItem.expense_splits` is embedded via
+  `EXPENSE_SELECT`; `ExpenseItem` meta shows "Not split" / "Split N ways ·
+  your share ₹x". Group page: `balancesByMember` (`lib/expenses.ts`) credits
+  the payer and debits each participant per currency (un-split expenses
+  ignored, so balances net to zero); `MemberItem` shows +green / −red /
+  "Settled up" once the group has any split expense. Known gaps: a member
+  who leaves keeps their share but is not listed, so visible balances no
+  longer sum to zero and re-saving that expense drops them; deleting a
+  profile that is in someone else's split is blocked by the sum check.
+
+- **Migration 005** applied — `revoke all` on the five migration-001 tables
+  from `public, anon, authenticated`, then re-grant exactly what 001's
+  section 7 intended (`profiles`: select/update; `group_members`:
+  select/insert/delete; `categories`, `groups`, `expenses`:
+  select/insert/update/delete; `anon`: nothing). Self-check DO block walks
+  every table × all seven privileges for `authenticated` and `anon` and
+  inspects the ACL via `aclexplode()` for a leftover PUBLIC entry. Verified
+  live: authenticated UPDATE on group_members and any anon read now fail
+  with 42501 at the grant layer, before RLS. `postgres` / `service_role`
+  untouched.
 
 Not yet built (immediate next steps, in rough order):
-- **Expense splitting (next)**: migration adding `expense_splits`
-  (`expense_id`, `user_id`, `amount_minor_units`; PK (expense_id, user_id);
-  RLS: read if you can read the expense, write only by the expense's
-  `created_by`, participants must be group members; sum must equal the
-  expense amount). Form: "Split between" member checkboxes (default: all
-  current members, equal split, remainder minor units distributed to the
-  first participants), editable later as members join. Group page: per-member
-  balance (paid − owed). Personal expenses have no splits. "Simplify debts"
-  stays in the backlog.
 - Stats dashboard (today/week/month/year + charts).
 - PWA config (manifest + service worker).
 - Deploy to Vercel.
@@ -236,6 +282,12 @@ Not yet built (immediate next steps, in rough order):
   spending over time — a read/aggregation feature, no schema change needed.
 - **"Simplify debts"** (net out intermediary debts into fewer payments) on
   top of expense splits, plus settle-up records.
+- **Splits vs. departed/deleted members**: show former participants in
+  group balances (or block leaving with an unsettled balance), and decide
+  what happens to a deleted profile's shares (today the FK cascade is
+  rejected by the sum check). Needed before any account-deletion feature.
+- **Custom (unequal) split amounts** in the form — the schema already allows
+  any split that sums to the amount; only equal splits are exposed.
 - **Invite links** for groups (token table + join RPC) as an alternative to
   add-by-email, which reveals whether an email has an account.
 - **Group ownership transfer** + last-owner guard: currently a sole owner can

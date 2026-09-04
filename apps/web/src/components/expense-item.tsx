@@ -102,6 +102,19 @@ export function ExpenseItem({
         ? "Paid by you"
         : `Paid by ${memberLabel(expense.payer)}`,
     );
+
+    const splits = expense.expense_splits;
+    if (splits.length === 0) {
+      meta.push("Not split");
+    } else {
+      const myShare = splits.find((split) => split.user_id === userId);
+      meta.push(
+        `Split ${splits.length} way${splits.length === 1 ? "" : "s"}` +
+          (myShare
+            ? ` · your share ${formatMinorUnits(myShare.amount_minor_units, expense.currency)}`
+            : ""),
+      );
+    }
   }
 
   return (

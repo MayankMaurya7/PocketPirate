@@ -3,7 +3,12 @@ import { notFound, redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/expense-filters";
-import { EXPENSE_SELECT, toGroupOption, totalsByCurrency } from "@/lib/expenses";
+import {
+  EXPENSE_SELECT,
+  balancesByMember,
+  toGroupOption,
+  totalsByCurrency,
+} from "@/lib/expenses";
 import { AddExpense } from "@/components/add-expense";
 import { AddMember } from "@/components/add-member";
 import { AppHeader } from "@/components/app-header";
@@ -72,6 +77,9 @@ export default async function GroupPage({
   const groupOption = toGroupOption(group);
   const expenseList: ExpenseListItem[] = expenses ?? [];
   const totals = totalsByCurrency(expenseList);
+  // Only meaningful once something is split; until then hide the column.
+  const hasSplits = expenseList.some((expense) => expense.expense_splits.length > 0);
+  const balances = balancesByMember(expenseList);
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
@@ -104,6 +112,12 @@ export default async function GroupPage({
             </h2>
           </div>
 
+          {hasSplits && (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Balances from split expenses: green is owed, red owes.
+            </p>
+          )}
+
           {isOwner && (
             <div className="mt-3">
               <AddMember groupId={group.id} />
@@ -118,6 +132,9 @@ export default async function GroupPage({
                 member={member}
                 isSelf={member.user_id === userId}
                 canRemove={isOwner && member.user_id !== userId}
+                balance={
+                  hasSplits ? (balances.get(member.user_id) ?? []) : undefined
+                }
               />
             ))}
           </ul>
