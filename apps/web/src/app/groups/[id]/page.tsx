@@ -3,19 +3,22 @@ import { notFound, redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/expense-filters";
-import {
-  EXPENSE_SELECT,
-  balancesByMember,
-  toGroupOption,
-  totalsByCurrency,
-} from "@/lib/expenses";
-import { AddExpense } from "@/components/add-expense";
-import { AddMember } from "@/components/add-member";
+import { groupLedger } from "@/lib/balances";
+import { EXPENSE_SELECT, toGroupOption, totalsByCurrency } from "@/lib/expenses";
+import { AddExpenseFab } from "@/components/add-expense-fab";
 import { AppHeader } from "@/components/app-header";
-import { ExpenseList } from "@/components/expense-list";
+import { BalanceSummary } from "@/components/balance-summary";
+import { DebtItem } from "@/components/debt-item";
 import { GroupActions } from "@/components/group-actions";
-import { MemberItem } from "@/components/member-item";
-import type { ExpenseListItem, GroupMember } from "@/lib/types";
+import { GroupTimeline } from "@/components/group-timeline";
+import { MembersDialog } from "@/components/members-dialog";
+import {
+  type ExpenseListItem,
+  type GroupMember,
+  type MemberLabels,
+  type Settlement,
+  memberLabel,
+} from "@/lib/types";
 
 export default async function GroupPage({
   params,
@@ -63,29 +66,49 @@ export default async function GroupPage({
   const isOwner = me?.role === "owner";
   const ownerCount = members.filter((member) => member.role === "owner").length;
 
-  const [{ data: categories }, { data: expenses }] = await Promise.all([
-    supabase.from("categories").select("id, name, color, icon").order("name"),
-    supabase
-      .from("expenses")
-      .select(EXPENSE_SELECT)
-      .eq("group_id", group.id)
-      .order("expense_date", { ascending: false })
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: categories }, { data: expenses }, { data: settlements }] =
+    await Promise.all([
+      supabase.from("categories").select("id, name, color, icon").order("name"),
+      supabase
+        .from("expenses")
+        .select(EXPENSE_SELECT)
+        .eq("group_id", group.id)
+        .order("expense_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("settlements")
+        .select("*")
+        .eq("group_id", group.id)
+        .order("settled_on", { ascending: false })
+        .order("created_at", { ascending: false }),
+    ]);
 
   const categoryList = categories ?? [];
   const groupOption = toGroupOption(group);
   const expenseList: ExpenseListItem[] = expenses ?? [];
+  const settlementList: Settlement[] = settlements ?? [];
   const totals = totalsByCurrency(expenseList);
-  // Only meaningful once something is split; until then hide the column.
-  const hasSplits = expenseList.some((expense) => expense.expense_splits.length > 0);
-  const balances = balancesByMember(expenseList);
+  const labels: MemberLabels = Object.fromEntries(
+    members.map((member) => [member.user_id, memberLabel(member.profiles)]),
+  );
+  // Balances only mean something once money has moved between members;
+  // until then the section and the member column stay hidden.
+  const hasLedger =
+    settlementList.length > 0 ||
+    expenseList.some((expense) => expense.expense_splits.length > 0);
+  const { debts, balances } = groupLedger(expenseList, settlementList);
+  const myDebts = debts.filter(
+    (debt) => debt.from === userId || debt.to === userId,
+  );
+  const otherDebts = debts.filter(
+    (debt) => debt.from !== userId && debt.to !== userId,
+  );
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="groups" />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-28 pt-10">
         <Link
           href="/groups"
           className="text-sm text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -102,51 +125,58 @@ export default async function GroupPage({
           />
         </div>
 
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
+        <div className="mt-2">
+          <MembersDialog
+            groupId={group.id}
+            members={members}
+            userId={userId}
+            isOwner={isOwner}
+            balances={balances}
+            showBalances={hasLedger}
+          />
+        </div>
+
+        {hasLedger && (
+          <section className="mt-8">
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Members
-              <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
-                {members.length}
-              </span>
+              Balances
             </h2>
-          </div>
-
-          {hasSplits && (
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Balances from split expenses: green is owed, red owes.
+              From split expenses and recorded payments. Settle a debt by
+              recording what was paid outside the app.
             </p>
-          )}
 
-          {isOwner && (
             <div className="mt-3">
-              <AddMember groupId={group.id} />
+              <BalanceSummary balance={balances.get(userId) ?? []} />
             </div>
-          )}
 
-          <ul className="mt-3 divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {members.map((member) => (
-              <MemberItem
-                key={member.user_id}
-                groupId={group.id}
-                member={member}
-                isSelf={member.user_id === userId}
-                canRemove={isOwner && member.user_id !== userId}
-                balance={
-                  hasSplits ? (balances.get(member.user_id) ?? []) : undefined
-                }
-              />
-            ))}
-          </ul>
-        </section>
+            {debts.length === 0 ? (
+              <p className="mt-3 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+                Everyone is settled up.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+                {[...myDebts, ...otherDebts].map((debt) => (
+                  <DebtItem
+                    key={`${debt.from}|${debt.to}|${debt.currency}`}
+                    groupId={group.id}
+                    userId={userId}
+                    debt={debt}
+                    labels={labels}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <section className="mt-8">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Expenses
+              Activity
               {expenseList.length > 0 && (
                 <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
-                  {expenseList.length} ·{" "}
+                  {expenseList.length} expense{expenseList.length === 1 ? "" : "s"} ·{" "}
                   <span className="tabular-nums">{totals.join(" + ")}</span>
                 </span>
               )}
@@ -160,27 +190,24 @@ export default async function GroupPage({
           </div>
 
           <div className="mt-3">
-            <AddExpense
-              categories={categoryList}
-              groups={[groupOption]}
-              userId={userId}
-              defaultGroupId={group.id}
-            />
-          </div>
-
-          <div className="mt-3">
-            <ExpenseList
+            <GroupTimeline
               expenses={expenseList}
+              settlements={settlementList}
               categories={categoryList}
               groups={[groupOption]}
               userId={userId}
-              showGroup={false}
-              emptyTitle="No expenses in this group yet"
-              emptyHint="Anyone in the group can add one, on their own or another member's behalf."
+              labels={labels}
             />
           </div>
         </section>
       </main>
+
+      <AddExpenseFab
+        categories={categoryList}
+        groups={[groupOption]}
+        userId={userId}
+        defaultGroupId={group.id}
+      />
     </div>
   );
 }

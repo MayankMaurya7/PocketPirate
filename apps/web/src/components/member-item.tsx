@@ -7,12 +7,12 @@ import { formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { UserMinusIcon } from "@/components/icons";
-import type { BalanceEntry } from "@/lib/expenses";
+import type { BalanceEntry } from "@/lib/balances";
 import { memberLabel, type GroupMember } from "@/lib/types";
 
 /**
  * One member row: avatar/initial, name or email, role, net balance (when
- * the group has split expenses), optional remove.
+ * the group has split expenses or payments), optional remove.
  */
 export function MemberItem({
   groupId,
@@ -28,7 +28,7 @@ export function MemberItem({
   canRemove: boolean;
   /**
    * Non-zero net positions per currency; empty = settled up. Omit to hide
-   * the column (no split expenses in the group yet).
+   * the column (nothing split or paid in the group yet).
    */
   balance?: BalanceEntry[];
 }) {
@@ -128,17 +128,20 @@ export function MemberItem({
         </div>
       )}
 
-      {canRemove && (
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={pending}
-          aria-label={`Remove ${label}`}
-          className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-        >
-          <UserMinusIcon />
-        </button>
-      )}
+      {/* Fixed-width slot so balances line up whether or not a row can be removed. */}
+      <div className="flex w-7 shrink-0 justify-end">
+        {canRemove && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={pending}
+            aria-label={`Remove ${label}`}
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+          >
+            <UserMinusIcon />
+          </button>
+        )}
+      </div>
     </li>
   );
 }

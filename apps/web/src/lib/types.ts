@@ -73,3 +73,12 @@ export type GroupOption = {
   name: string;
   members: GroupMemberOption[];
 };
+
+/** A recorded payment between two group members (see migration 006). */
+export type Settlement = Tables<"settlements">;
+
+/**
+ * Display label per member id for a group page. Members who have left are
+ * absent — callers fall back to a "former member" label.
+ */
+export type MemberLabels = Record<string, string>;

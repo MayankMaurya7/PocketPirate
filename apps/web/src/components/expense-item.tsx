@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
+import { AddedAt } from "@/components/added-at";
 import { ExpenseForm } from "@/components/expense-form";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import {
@@ -107,13 +108,23 @@ export function ExpenseItem({
     if (splits.length === 0) {
       meta.push("Not split");
     } else {
-      const myShare = splits.find((split) => split.user_id === userId);
-      meta.push(
-        `Split ${splits.length} way${splits.length === 1 ? "" : "s"}` +
-          (myShare
-            ? ` · your share ${formatMinorUnits(myShare.amount_minor_units, expense.currency)}`
-            : ""),
-      );
+      meta.push(`Split ${splits.length} way${splits.length === 1 ? "" : "s"}`);
+    }
+  }
+
+  // What this expense did to the viewer's balance: as payer you lent the
+  // others' shares; as a participant you borrowed your share; otherwise it
+  // left you untouched. Mirrors the pairwise ledger on the group page.
+  let position: { label: string; minorUnits: number } | null = null;
+  if (expense.group_id && expense.expense_splits.length > 0) {
+    const myShare =
+      expense.expense_splits.find((split) => split.user_id === userId)
+        ?.amount_minor_units ?? 0;
+    if (expense.user_id === userId) {
+      const lent = expense.amount_minor_units - myShare;
+      position = lent > 0 ? { label: "you lent", minorUnits: lent } : null;
+    } else if (myShare > 0) {
+      position = { label: "you borrowed", minorUnits: myShare };
     }
   }
 
@@ -131,6 +142,7 @@ export function ExpenseItem({
         </p>
         <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
           {meta.join(" · ")}
+          <AddedAt iso={expense.created_at} date={expense.expense_date} />
         </p>
         {error && (
           <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -139,32 +151,52 @@ export function ExpenseItem({
         )}
       </div>
 
-      <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-        {formatMinorUnits(expense.amount_minor_units, expense.currency)}
-      </span>
+      <div className="shrink-0 text-right">
+        <p className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+          {formatMinorUnits(expense.amount_minor_units, expense.currency)}
+        </p>
+        {expense.group_id && expense.expense_splits.length > 0 && (
+          <p
+            className={`mt-0.5 text-xs tabular-nums ${
+              position === null
+                ? "text-zinc-400 dark:text-zinc-500"
+                : position.label === "you lent"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-red-600 dark:text-red-400"
+            }`}
+          >
+            {position === null
+              ? "not involved"
+              : `${position.label} ${formatMinorUnits(position.minorUnits, expense.currency)}`}
+          </p>
+        )}
+      </div>
 
-      {enteredByMe && (
-        <div className="flex shrink-0 gap-1">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            disabled={pending}
-            aria-label="Edit expense"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            <PencilIcon />
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={pending}
-            aria-label="Delete expense"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-          >
-            <TrashIcon />
-          </button>
-        </div>
-      )}
+      {/* Fixed-width slot so amounts line up across rows with and without actions. */}
+      <div className="flex w-15 shrink-0 justify-end gap-1">
+        {enteredByMe && (
+          <>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              disabled={pending}
+              aria-label="Edit expense"
+              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              <PencilIcon />
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={pending}
+              aria-label="Delete expense"
+              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+            >
+              <TrashIcon />
+            </button>
+          </>
+        )}
+      </div>
     </li>
   );
 }

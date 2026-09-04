@@ -282,6 +282,74 @@ export type Database = {
         }
         Relationships: []
       }
+      settlements: {
+        Row: {
+          amount_minor_units: number
+          created_at: string
+          created_by: string
+          currency: string
+          from_user_id: string
+          group_id: string
+          id: string
+          note: string | null
+          settled_on: string
+          to_user_id: string
+        }
+        Insert: {
+          amount_minor_units: number
+          created_at?: string
+          created_by: string
+          currency: string
+          from_user_id: string
+          group_id: string
+          id?: string
+          note?: string | null
+          settled_on?: string
+          to_user_id: string
+        }
+        Update: {
+          amount_minor_units?: number
+          created_at?: string
+          created_by?: string
+          currency?: string
+          from_user_id?: string
+          group_id?: string
+          id?: string
+          note?: string | null
+          settled_on?: string
+          to_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlements_from_user_id_fkey"
+            columns: ["from_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlements_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlements_to_user_id_fkey"
+            columns: ["to_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -295,9 +295,78 @@ Done and on `main`:
   (validated ≥3:1 on both surfaces), category identity comes from the dot
   beside the label, not the bar.
 
+- **Migration 006** applied — `settlements` (`group_id`, `from_user_id`
+  payer, `to_user_id` payee, `created_by`, `amount_minor_units > 0`,
+  `currency`, `settled_on` date, `note`; `from <> to` check; cascade from
+  groups and all three profile FKs; index `(group_id, settled_on desc)`).
+  Kept separate from `expenses` so payments never appear as spending.
+  Grants: explicit REVOKE ALL then `select, insert, delete` to
+  `authenticated` (no UPDATE — delete and re-record). RLS: SELECT for
+  group members; INSERT only if `created_by` = self, self is one of the
+  two parties, and both parties are current members (nobody records a
+  payment between two others); DELETE by either party while still a
+  member. Self-check DO block covers RLS, policy count, all seven
+  privileges, the PUBLIC ACL entry and the check constraint. Verified
+  live via rolled-back `db query` transactions (party/non-party/outsider
+  inserts, payee recording on payer's behalf, non-party delete = 0 rows,
+  UPDATE and anon SELECT fail 42501 at the grant layer).
+- **Group balances & settle up** on `/groups/[id]`: `lib/balances.ts`
+  `groupLedger(expenses, settlements)` builds a **direct pairwise ledger**
+  (per unordered member pair, per currency: participants owe the payer
+  their share; a settlement credits the payer and debits the payee) and
+  derives per-member net balances from it, so both views agree and net to
+  zero. Debts are not simplified across the group (Splitwise "simplify
+  debts" OFF) so every number is traceable to expenses between two people.
+  UI: a "Balances" section (shown once anything is split or paid) with
+  `BalanceSummary` ("Overall, you owe / are owed …" per currency), a debts
+  card (`DebtItem`: the viewer's pairs first — "You owe X" red / "X owes
+  you" green with a **Settle up** / **Record payment** button — then other
+  members' pairs read-only, "Between other members"), and a `<details>`
+  list of recorded payments (`SettlementItem`: "X paid Y", date, recorded
+  by, note, delete for either party). `SettleUpForm` (modelled on
+  Splitwise's record-payment screen): direction fixed by the debt, amount
+  prefilled with the debt but editable (live hint for partial payments or
+  overpaying, which flips the debt), date, optional note, "recorded outside
+  Spendwise, no money is moved" notice. A party who has left the group is
+  labelled "a former member" and gets no settle button (RLS needs both to
+  be members). `ExpenseItem` now shows **"you lent ₹x" / "you borrowed
+  ₹x" / "not involved"** under the amount for split group expenses.
+  `MemberItem` net balances include settlements. Icons added:
+  `BanknoteIcon`, `InfoIcon`. `lib/types.ts`: `Settlement`, `MemberLabels`.
+- **Group page layout (compact, no tabs)**: header = title + owner/leave
+  actions (`GroupActions`), then an "N people" chip (`MembersDialog`) that
+  opens a native `<dialog>` (`components/modal.tsx`: `showModal()`, body
+  scroll lock, backdrop/Escape close, children mounted only while open)
+  holding the whole members UI (list with net balances, owner-only add by
+  email and remove). Below: the Balances section, then an **Activity
+  timeline** (`GroupTimeline`) merging expenses and recorded payments,
+  newest first (date, then `created_at`), grouped under month headings,
+  with each row showing "added 8:50 pm" (`AddedAt`: client-only after
+  hydration via `useSyncExternalStore`, since the server can't know the
+  browser timezone; shows the day too when it differs from the entry's
+  date). **Add expense is a fixed bottom-right button** (`AddExpenseFab`)
+  opening `ExpenseForm` in the modal; `main` has bottom padding so the last
+  row is never covered. The inline `AddExpense` and `ExpenseList` remain in
+  use on `/`. Icons added: `UsersIcon`, `PlusIcon`.
+- **Row alignment convention**: every list row that may or may not carry
+  trailing action buttons reserves a fixed-width slot for them (`w-15` for
+  the edit+delete pair on expense and payment rows, `w-7` for the remove
+  icon on member rows, `w-32` for the Settle up / Record payment button on
+  debt rows), so amounts share one right edge across the list. Keep this
+  when adding new row types or actions.
+
 Not yet built (immediate next steps, in rough order):
-- PWA config (manifest + service worker).
-- Deploy to Vercel.
+1. **Block leaving a group with an unsettled balance** (guard trigger on
+   `group_members` delete; pair with the last-owner guard). Without it
+   balances silently stop summing to zero.
+2. **Unequal splits** (exact amounts / shares / percentages) and "paid by
+   multiple people" in `ExpenseForm` — schema already allows any split
+   that sums to the amount.
+3. **Simplify debts** toggle per group on top of `groupLedger`.
+4. **Group activity polish**: expense detail view with every participant's
+   share; edit a recorded payment (needs an UPDATE policy for either party).
+5. **Invite links** in the members dialog.
+6. PWA config (manifest + service worker), then deploy to Vercel.
 
 ## Backlog (future — capture, don't build until scheduled)
 
@@ -312,16 +381,34 @@ Not yet built (immediate next steps, in rough order):
   read/aggregation feature, no schema change needed. Also decide whether
   personal stats should include group expenses the user paid (or their
   split share); today they are excluded.
-- **"Simplify debts"** (net out intermediary debts into fewer payments) on
-  top of expense splits, plus settle-up records.
-- **Splits vs. departed/deleted members**: show former participants in
-  group balances (or block leaving with an unsettled balance), and decide
-  what happens to a deleted profile's shares (today the FK cascade is
-  rejected by the sum check). Needed before any account-deletion feature.
-- **Custom (unequal) split amounts** in the form — the schema already allows
-  any split that sums to the amount; only equal splits are exposed.
+- **"Simplify debts"** (net out intermediary debts into fewer payments) as
+  a per-group toggle on top of the pairwise ledger in `lib/balances.ts`
+  (greedy largest-creditor/largest-debtor matching; pure computation, no
+  schema change beyond a `groups.simplify_debts` flag). Settle-up records
+  exist (migration 006).
+- **Splits vs. departed/deleted members**: former participants now appear
+  in balances as "a former member" but cannot be settled with (RLS needs
+  both parties to be members). Decide: block leaving with an unsettled
+  balance (trigger on `group_members` delete), and what happens to a
+  deleted profile's shares (today the FK cascade is rejected by the sum
+  check). Needed before any account-deletion feature.
+- **Custom (unequal) split amounts / shares / percentages** in the form —
+  the schema already allows any split that sums to the amount; only equal
+  splits are exposed. Also "paid by multiple people".
+- **Group activity feed** interleaving expenses and payments by date (the
+  Splitwise group timeline), and a "Friends"-style cross-group view of
+  what you owe each person overall.
+- **Settle-up niceties**: "settle all" for one counterparty across
+  currencies, edit a recorded payment (would need an UPDATE policy for
+  either party), reminders/nudges (needs Notifications), and a per-expense
+  detail view listing every participant's share (today only the viewer's
+  position is shown on the row).
+- **Personal stats vs. group spend**: decide whether `/stats` should count
+  the user's split share of group expenses (today group expenses are
+  excluded entirely).
 - **Invite links** for groups (token table + join RPC) as an alternative to
-  add-by-email, which reveals whether an email has an account.
+  add-by-email, which reveals whether an email has an account. Belongs in
+  the members dialog next to add-by-email.
 - **Group ownership transfer** + last-owner guard: currently a sole owner can
   leave via group_members_delete, stranding a group. Add a
   `transfer_group_ownership` RPC or a guard trigger. Later migration.
