@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { GroupInvite } from "@/lib/types";
 
 const secondaryButtonClasses =
@@ -33,6 +34,7 @@ export function InviteLink({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   // A freshly minted token, shown until router.refresh() brings the row.
   const [fresh, setFresh] = useState<string | null>(null);
 
@@ -61,10 +63,6 @@ export function InviteLink({
   }
 
   async function handleRemove() {
-    if (!window.confirm("Remove the invite link? Nobody can join with it any more.")) {
-      return;
-    }
-
     setPending(true);
     setError(null);
     setCopied(false);
@@ -83,6 +81,7 @@ export function InviteLink({
 
     setFresh(null);
     setPending(false);
+    setConfirmingRemove(false);
     router.refresh();
   }
 
@@ -174,7 +173,7 @@ export function InviteLink({
               </button>
               <button
                 type="button"
-                onClick={handleRemove}
+                onClick={() => setConfirmingRemove(true)}
                 disabled={pending}
                 className={secondaryButtonClasses}
               >
@@ -190,6 +189,18 @@ export function InviteLink({
           {error}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        onCancel={() => setConfirmingRemove(false)}
+        onConfirm={handleRemove}
+        pending={pending}
+        error={error}
+        title="Remove the invite link?"
+        description="Anyone who still has the link will no longer be able to join. You can create a new link at any time."
+        confirmLabel="Remove link"
+        pendingLabel="Removing…"
+      />
     </div>
   );
 }

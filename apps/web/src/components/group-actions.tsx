@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { GroupForm } from "@/components/group-form";
 
 const secondaryButtonClasses =
@@ -46,18 +47,11 @@ export function GroupActions({
 }) {
   const router = useRouter();
   const [renaming, setRenaming] = useState(false);
+  const [confirming, setConfirming] = useState<"delete" | "leave" | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleDelete() {
-    if (
-      !window.confirm(
-        `Delete "${group.name}"? Every expense logged in this group will be deleted too.`,
-      )
-    ) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -78,10 +72,6 @@ export function GroupActions({
   }
 
   async function handleLeave() {
-    if (!window.confirm(`Leave "${group.name}"?`)) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -133,18 +123,18 @@ export function GroupActions({
               </button>
               <button
                 type="button"
-                onClick={handleDelete}
+                onClick={() => setConfirming("delete")}
                 disabled={pending}
                 className={dangerButtonClasses}
               >
-                {pending ? "Deleting…" : "Delete group"}
+                Delete group
               </button>
             </>
           )}
           {!leaveBlocker && (
             <button
               type="button"
-              onClick={handleLeave}
+              onClick={() => setConfirming("leave")}
               disabled={pending}
               className={isOwner ? secondaryButtonClasses : dangerButtonClasses}
             >
@@ -165,6 +155,30 @@ export function GroupActions({
           {error}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirming === "delete"}
+        onCancel={() => setConfirming(null)}
+        onConfirm={handleDelete}
+        pending={pending}
+        error={error}
+        title={`Delete “${group.name}”?`}
+        description="Every expense and payment recorded in this group will be deleted for all of its members. This can’t be undone."
+        confirmLabel="Delete group"
+        pendingLabel="Deleting…"
+      />
+
+      <ConfirmDialog
+        open={confirming === "leave"}
+        onCancel={() => setConfirming(null)}
+        onConfirm={handleLeave}
+        pending={pending}
+        error={error}
+        title={`Leave “${group.name}”?`}
+        description="You will stop seeing this group and its expenses. Anything you paid or were owed stays on record, and an owner can invite you back later."
+        confirmLabel="Leave group"
+        pendingLabel="Leaving…"
+      />
     </div>
   );
 }

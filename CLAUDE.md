@@ -653,8 +653,70 @@ Done and on `main`:
   responsive (2-up tiles, `sm:` grid in `CategoryBars`, `ResizeObserver`
   chart). Not done: safe-area insets for the FAB, a bottom-sheet modal.
 
+- **PWA config**: `app/manifest.ts` (Next file convention → served at
+  `/manifest.webmanifest`, link tag auto-injected): name/short_name
+  "Spendwise", `start_url`/`scope`/`id` = `/`, `display: standalone`,
+  `theme_color` brand emerald `#059669` (splash + title bar before load),
+  `background_color` `#fafafa`. Icons: white bold "S" on emerald —
+  `public/icons/icon-192.png`, `icon-512.png` (rounded corners, purpose
+  any) and `icon-maskable-512.png` (full-bleed); `app/icon.svg` (favicon)
+  and `app/apple-icon.png` (180, full-bleed, iOS masks it) are picked up
+  by Next's icon conventions. Rasterised once with macOS `qlmanage` from
+  an SVG (no rsvg/ImageMagick on the machine); regenerate the same way if
+  the mark changes. Root layout `metadata`: `applicationName`, title
+  template `%s · Spendwise` (login/join page titles are now the bare
+  segment), `appleWebApp` (Next 16 emits the standard
+  `mobile-web-app-capable` meta, not the `apple-` one); `viewport.themeColor`
+  follows the header per colour scheme (`#ffffff` / `#18181b`). The
+  create-next-app `favicon.ico` and the five boilerplate SVGs in `public/`
+  were removed. **Service worker** `public/sw.js` (hand-written, no
+  library), registered by `components/service-worker.tsx` from the root
+  layout in **production only** — in dev it unregisters any worker on the
+  origin so a stale `next start` worker can't break HMR. Policy: page HTML
+  is **never cached** (every page is live per-user data); navigations are
+  network-only with a precached `/offline` fallback (static page,
+  `app/offline/page.tsx` + `RetryButton`; the worker also precaches the
+  `/_next/static` assets its HTML references so it renders styled while
+  offline); `/_next/static/*` is cache-first (content-hashed, capped at 200
+  entries, oldest dropped); everything else — Supabase, RSC payload
+  fetches, route handlers, non-GET — passes through untouched.
+  `skipWaiting` on install + `clients.claim` (safe because no HTML is
+  cached), navigation preload enabled, `VERSION` constant to drop caches.
+  `next.config.ts` sets `Cache-Control: public, max-age=0,
+  must-revalidate` on `/sw.js`; the middleware matcher skips `sw.js`,
+  `manifest.webmanifest`, `icons/` and `.ico`. Verified with headless
+  Chromium against `next start`: worker active, offline page + 12 assets
+  precached, offline navigation served from the worker fully styled,
+  static chunks 12/12 via the worker, RSC fetch still `text/x-component`
+  from the network, back online restores real pages. Not done: an
+  "update available" toast (a new deploy's worker takes over on the next
+  navigation anyway), install prompt UI, safe-area insets.
+
+- **Confirm dialog** (`components/confirm-dialog.tsx`) replaces every
+  `window.confirm` (there were seven, all destructive: delete expense /
+  payment / category / group, leave group, remove member, remove invite
+  link; there were no `alert()`s — errors already render inline with
+  `role="alert"`). A native `<dialog>` with `role="alertdialog"`,
+  `aria-labelledby`/`describedby`, `max-w-sm`, red warning badge for the
+  `danger` tone, consequence-first description, verb-labelled confirm
+  button ("Delete expense", never "OK") and Cancel first in DOM order so it
+  takes the initial focus; Escape and the backdrop cancel (ignored while
+  pending). **The caller owns the async work**: it passes `pending` and
+  `error` in, runs the action from `onConfirm`, and flips `open` off on
+  success — so the dialog stays up with "Deleting…" while the request runs
+  and shows a failure (e.g. the leave-guard trigger message) inside itself
+  instead of vanishing. Buttons stack on phones (primary on top) and sit
+  right-aligned from `sm`. `useNativeDialog(open)` was extracted from
+  `Modal` (showModal/close + body scroll lock) and is shared by both. Rule:
+  **never call `window.confirm` / `alert` / `prompt`** — use
+  `ConfirmDialog` for confirmations and the inline `role="alert"` slots
+  for errors. `AlertTriangleIcon` added to `icons.tsx`.
+
 Not yet built (immediate next steps, in rough order):
-1. PWA config (manifest + service worker), then deploy to Vercel.
+1. Deploy to Vercel (root directory `apps/web`, env vars
+   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`; then add
+   `https://<host>/**` to Supabase's redirect allow-list and set the Site
+   URL — see the Auth UI and Invite links notes above).
 
 ## Backlog (future — capture, don't build until scheduled)
 

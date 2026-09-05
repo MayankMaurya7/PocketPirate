@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { UserMinusIcon } from "@/components/icons";
 import type { BalanceEntry } from "@/lib/balances";
 import { memberLabel, type GroupMember } from "@/lib/types";
@@ -33,6 +34,7 @@ export function MemberItem({
   balance?: BalanceEntry[];
 }) {
   const router = useRouter();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,10 +45,6 @@ export function MemberItem({
       : null;
 
   async function handleRemove() {
-    if (!window.confirm(`Remove ${label} from this group?`)) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -63,6 +61,7 @@ export function MemberItem({
       return;
     }
 
+    setConfirmingRemove(false);
     router.refresh();
   }
 
@@ -133,7 +132,7 @@ export function MemberItem({
         {canRemove && (
           <button
             type="button"
-            onClick={handleRemove}
+            onClick={() => setConfirmingRemove(true)}
             disabled={pending}
             aria-label={`Remove ${label}`}
             className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -142,6 +141,20 @@ export function MemberItem({
           </button>
         )}
       </div>
+
+      {canRemove && (
+        <ConfirmDialog
+          open={confirmingRemove}
+          onCancel={() => setConfirmingRemove(false)}
+          onConfirm={handleRemove}
+          pending={pending}
+          error={error}
+          title={`Remove ${label}?`}
+          description="They will lose access to this group and its expenses. Anything they paid or owe stays on record, and an owner can invite them back later."
+          confirmLabel="Remove member"
+          pendingLabel="Removing…"
+        />
+      )}
     </li>
   );
 }

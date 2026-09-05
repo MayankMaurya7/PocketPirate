@@ -7,7 +7,7 @@ import { AppHeader } from "@/components/app-header";
 import { JoinGroup } from "@/components/join-group";
 
 export const metadata: Metadata = {
-  title: "Join a group · Spendwise",
+  title: "Join a group",
 };
 
 /** What a token looks like (migration 011): 64 lowercase hex characters. */

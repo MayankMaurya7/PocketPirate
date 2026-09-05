@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
 import { ExpenseDetails, expenseMemberNamer } from "@/components/expense-details";
 import { ExpenseForm } from "@/components/expense-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
@@ -49,14 +50,11 @@ export function ExpenseItem({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleDelete() {
-    if (!window.confirm("Delete this expense?")) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -72,6 +70,7 @@ export function ExpenseItem({
       return;
     }
 
+    setConfirmingDelete(false);
     router.refresh();
   }
 
@@ -233,7 +232,7 @@ export function ExpenseItem({
           </button>
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setConfirmingDelete(true)}
             disabled={pending}
             aria-label="Delete expense"
             className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -243,6 +242,33 @@ export function ExpenseItem({
         </div>
       ) : (
         <div aria-hidden="true" className="hidden sm:block sm:w-15 sm:shrink-0" />
+      )}
+
+      {enteredByMe && (
+        <ConfirmDialog
+          open={confirmingDelete}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={handleDelete}
+          pending={pending}
+          error={error}
+          title="Delete this expense?"
+          description={
+            <>
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {title}
+              </span>{" "}
+              ({formatMinorUnits(expense.amount_minor_units, expense.currency)})
+              {expense.group_id && expense.expense_splits.length > 0
+                ? ` will be removed and everyone's balances in ${
+                    expense.groups?.name ?? "the group"
+                  } adjusted.`
+                : " will be removed."}{" "}
+              This can&rsquo;t be undone.
+            </>
+          }
+          confirmLabel="Delete expense"
+          pendingLabel="Deleting…"
+        />
       )}
 
       {expense.group_id && (

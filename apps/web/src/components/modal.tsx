@@ -3,22 +3,11 @@
 import { useEffect, useRef } from "react";
 
 /**
- * A native <dialog> shown modally. Mount it with `open` and render the
- * content inside; the browser handles focus trapping, Escape and the
- * backdrop. Children are only rendered while open, so form state resets
- * each time.
+ * Drives a native <dialog> from React state: `showModal()` when `open`
+ * turns true, `close()` when it turns false, and locks body scroll while
+ * shown. Shared by `Modal` and `ConfirmDialog`.
  */
-export function Modal({
-  open,
-  onClose,
-  title,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
+export function useNativeDialog(open: boolean) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -36,6 +25,28 @@ export function Modal({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  return ref;
+}
+
+/**
+ * A native <dialog> shown modally. Mount it with `open` and render the
+ * content inside; the browser handles focus trapping, Escape and the
+ * backdrop. Children are only rendered while open, so form state resets
+ * each time.
+ */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const ref = useNativeDialog(open);
 
   return (
     <dialog

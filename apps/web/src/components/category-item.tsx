@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
 import { CategoryForm } from "@/components/category-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PencilIcon, TrashIcon } from "@/components/icons";
 import type { CategoryWithUsage } from "@/lib/types";
 
@@ -12,22 +13,13 @@ import type { CategoryWithUsage } from "@/lib/types";
 export function CategoryItem({ category }: { category: CategoryWithUsage }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const usage = category.expenseCount;
 
   async function handleDelete() {
-    const message =
-      usage === 0
-        ? `Delete "${category.name}"?`
-        : `Delete "${category.name}"? ${usage} expense${
-            usage === 1 ? "" : "s"
-          } will become uncategorised.`;
-    if (!window.confirm(message)) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -43,6 +35,7 @@ export function CategoryItem({ category }: { category: CategoryWithUsage }) {
       return;
     }
 
+    setConfirmingDelete(false);
     router.refresh();
   }
 
@@ -91,7 +84,7 @@ export function CategoryItem({ category }: { category: CategoryWithUsage }) {
         </button>
         <button
           type="button"
-          onClick={handleDelete}
+          onClick={() => setConfirmingDelete(true)}
           disabled={pending}
           aria-label={`Delete ${category.name}`}
           className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -99,6 +92,24 @@ export function CategoryItem({ category }: { category: CategoryWithUsage }) {
           <TrashIcon />
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={handleDelete}
+        pending={pending}
+        error={error}
+        title={`Delete “${category.name}”?`}
+        description={
+          usage === 0
+            ? "No expenses use this category."
+            : `${usage} expense${usage === 1 ? "" : "s"} will become uncategorised. ${
+                usage === 1 ? "It is" : "They are"
+              } not deleted.`
+        }
+        confirmLabel="Delete category"
+        pendingLabel="Deleting…"
+      />
     </li>
   );
 }

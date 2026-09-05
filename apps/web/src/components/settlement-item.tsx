@@ -7,6 +7,7 @@ import { formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { BanknoteIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import { SettleUpForm } from "@/components/settle-up-form";
 import type { MemberLabels, Settlement } from "@/lib/types";
@@ -28,6 +29,7 @@ export function SettlementItem({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,10 +57,6 @@ export function SettlementItem({
   }
 
   async function handleDelete() {
-    if (!window.confirm("Delete this payment? The balance will go back to what it was.")) {
-      return;
-    }
-
     setPending(true);
     setError(null);
 
@@ -74,6 +72,7 @@ export function SettlementItem({
       return;
     }
 
+    setConfirmingDelete(false);
     router.refresh();
   }
 
@@ -141,7 +140,7 @@ export function SettlementItem({
           )}
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setConfirmingDelete(true)}
             disabled={pending}
             aria-label="Delete payment"
             className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -151,6 +150,29 @@ export function SettlementItem({
         </div>
       ) : (
         <div aria-hidden="true" className="hidden sm:block sm:w-15 sm:shrink-0" />
+      )}
+
+      {isParty && (
+        <ConfirmDialog
+          open={confirmingDelete}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={handleDelete}
+          pending={pending}
+          error={error}
+          title="Delete this payment?"
+          description={
+            <>
+              The record that{" "}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {paidBy} paid {paidTo}{" "}
+                {formatMinorUnits(settlement.amount_minor_units, settlement.currency)}
+              </span>{" "}
+              will be removed and the balance goes back to what it was before.
+            </>
+          }
+          confirmLabel="Delete payment"
+          pendingLabel="Deleting…"
+        />
       )}
     </li>
   );
