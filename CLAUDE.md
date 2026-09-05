@@ -385,10 +385,33 @@ Done and on `main`:
   owner's remove attempt on an indebted member surfaces the trigger
   message inline under the member row (existing error slot).
 
+- **Unequal splits** in `ExpenseForm`: a "Split method" segmented control
+  (Equally / Amounts / Shares / Percent) beside "Split between". Checkboxes
+  still choose the participants; in the non-equal modes each ticked member
+  gets a small input (exact amount in the expense currency, integer share
+  count, or percentage with up to two decimals) and a live computed share.
+  All modes resolve to one `Map<userId, minorUnits>` via `planSplit`,
+  which also produces the footer status line ("₹300 of ₹500 assigned ·
+  ₹200 left", "33.33% of 100% assigned · 66.67% left", "too small to split
+  N ways like this") and the save-blocking error; the save then writes those
+  rows exactly as before (delete → update → insert), so the DB sum invariant
+  is unchanged. Proportional modes use `splitByWeights` in
+  `packages/shared/src/money.ts` — largest-remainder allocation with BigInt
+  intermediates so parts always sum exactly to the total; percentages are
+  integer basis points (`PERCENT_BASIS`, `parsePercentToBasisPoints`,
+  `basisPointsToInputValue`). Switching method prefills only blank inputs
+  (equal shares of the amount / "1" / 100 ÷ n) so typed numbers survive
+  toggling; a member ticked while in Shares mode gets "1", in the other
+  modes the user must fill their value. Editing an expense whose saved rows
+  are not an equal split opens in Amounts mode with the saved amounts (the
+  rows only record outcomes, not the method used). `splitsChanged` now
+  compares people *and* amounts (`sameShares`). No schema change.
+
 Not yet built (immediate next steps, in rough order):
-1. **Unequal splits** (exact amounts / shares / percentages) and "paid by
-   multiple people" in `ExpenseForm` — schema already allows any split
-   that sums to the amount.
+1. **"Paid by multiple people"** for one expense — needs a design decision
+   first: the schema has a single payer (`expenses.user_id`), so either a
+   `expense_payers` table (mirror of `expense_splits`, sum = amount, ledger
+   credits each payer) or a client-side "save as N expenses" shortcut.
 2. **Simplify debts** toggle per group on top of `groupLedger` (note:
    `has_unsettled_balance` is pairwise; a simplified view would need the
    guard to judge on net position instead, or the UI would show "settled"
@@ -421,9 +444,8 @@ Not yet built (immediate next steps, in rough order):
   `group_members` (the guard lets cascades pass) and the participant's
   split rows, which the sum check then rejects. Decide what happens to a
   deleted profile's shares. Needed before any account-deletion feature.
-- **Custom (unequal) split amounts / shares / percentages** in the form —
-  the schema already allows any split that sums to the amount; only equal
-  splits are exposed. Also "paid by multiple people".
+- **"Paid by multiple people"** on one expense (unequal splits are done;
+  see the next-steps list for the schema question).
 - **Group activity feed** interleaving expenses and payments by date (the
   Splitwise group timeline), and a "Friends"-style cross-group view of
   what you owe each person overall.

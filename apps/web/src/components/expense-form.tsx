@@ -5,15 +5,24 @@ import { useRouter } from "next/navigation";
 
 import {
   DEFAULT_CURRENCY,
+  PERCENT_BASIS,
+  basisPointsToInputValue,
   formatMinorUnits,
   minorUnitsToInputValue,
   parseAmountToMinorUnits,
+  parsePercentToBasisPoints,
+  splitByWeights,
   splitEqually,
   toLocalDateString,
 } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
-import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
+import type {
+  CategoryOption,
+  ExpenseListItem,
+  ExpenseSplit,
+  GroupOption,
+} from "@/lib/types";
 
 const inputClasses =
   "mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
@@ -25,8 +34,154 @@ const labelClasses =
 const PERSONAL = "";
 const NEW_GROUP = "new";
 
-function sameSet(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((value) => b.includes(value));
+/** How the participants' shares are worked out. */
+type SplitMode = "equal" | "exact" | "shares" | "percent";
+
+const SPLIT_MODES: { value: SplitMode; label: string }[] = [
+  { value: "equal", label: "Equally" },
+  { value: "exact", label: "Amounts" },
+  { value: "shares", label: "Shares" },
+  { value: "percent", label: "Percent" },
+];
+
+/** Per-member typed values for each of the non-equal modes. */
+type SplitInputs = Record<Exclude<SplitMode, "equal">, Record<string, string>>;
+
+/**
+ * The shares a mode + inputs produce for the current amount. `shares` is
+ * null while the split is incomplete or invalid; `error` says why (and is
+ * what blocks the save), `footer` is the live status line under the list.
+ */
+type SplitPlan = {
+  shares: Map<string, number> | null;
+  footer: string;
+  error: string | null;
+};
+
+const plural = (count: number, noun: string) =>
+  `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** Do the saved split rows carry exactly these shares (same people, same amounts)? */
+function sameShares(existing: ExpenseSplit[], shares: Map<string, number>): boolean {
+  return (
+    existing.length === shares.size &&
+    existing.every((split) => shares.get(split.user_id) === split.amount_minor_units)
+  );
+}
+
+/** True when the saved rows are what an equal split of the amount gives. */
+function isEqualSplit(expense: ExpenseListItem): boolean {
+  const saved = expense.expense_splits
+    .map((split) => split.amount_minor_units)
+    .sort((a, b) => a - b);
+  const equal = splitEqually(expense.amount_minor_units, saved.length).sort(
+    (a, b) => a - b,
+  );
+  return saved.every((value, index) => value === equal[index]);
+}
+
+function planSplit(
+  mode: SplitMode,
+  amount: number | null,
+  participants: string[],
+  inputs: SplitInputs,
+  currency: string,
+): SplitPlan {
+  const count = participants.length;
+  if (count === 0) {
+    return {
+      shares: new Map(),
+      footer: "Not split — whoever paid bears the whole amount.",
+      error: null,
+    };
+  }
+  const fmt = (minorUnits: number) => formatMinorUnits(minorUnits, currency);
+  const tooSmall = (parts: number[]): SplitPlan | null =>
+    parts.some((part) => part <= 0)
+      ? {
+          shares: null,
+          footer: `The amount is too small to split ${count} ways like this.`,
+          error: `The amount is too small to split ${count} ways like this.`,
+        }
+      : null;
+  const toMap = (parts: number[]) =>
+    new Map(parts.map((part, index) => [participants[index], part] as const));
+
+  switch (mode) {
+    case "equal": {
+      const footer = `Split equally ${count} way${count === 1 ? "" : "s"}.`;
+      if (amount === null) {
+        return { shares: null, footer, error: null };
+      }
+      const parts = splitEqually(amount, count);
+      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+    }
+
+    case "exact": {
+      const parsed = participants.map((id) =>
+        parseAmountToMinorUnits(inputs.exact[id] ?? "", currency),
+      );
+      if (parsed.some((value) => value === null)) {
+        const error = "Enter an amount for everyone in the split.";
+        return { shares: null, footer: error, error };
+      }
+      const parts = parsed as number[];
+      const assigned = parts.reduce((sum, part) => sum + part, 0);
+      if (amount === null) {
+        return { shares: null, footer: `${fmt(assigned)} assigned.`, error: null };
+      }
+      const diff = amount - assigned;
+      if (diff !== 0) {
+        const error = `${fmt(assigned)} of ${fmt(amount)} assigned · ${fmt(Math.abs(diff))} ${diff > 0 ? "left" : "over"}.`;
+        return { shares: null, footer: error, error };
+      }
+      return {
+        shares: toMap(parts),
+        footer: `Split by exact amounts, ${count} way${count === 1 ? "" : "s"}.`,
+        error: null,
+      };
+    }
+
+    case "shares": {
+      const weights = participants.map((id) => {
+        const raw = (inputs.shares[id] ?? "").trim();
+        return /^\d{1,4}$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
+      });
+      if (weights.some((value) => value === null)) {
+        const error = "Enter a share count (1 or more) for everyone in the split.";
+        return { shares: null, footer: error, error };
+      }
+      const total = (weights as number[]).reduce((sum, weight) => sum + weight, 0);
+      const footer = `Split by shares · ${plural(total, "share")} in total.`;
+      if (amount === null) {
+        return { shares: null, footer, error: null };
+      }
+      const parts = splitByWeights(amount, weights as number[]);
+      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+    }
+
+    case "percent": {
+      const basisPoints = participants.map((id) =>
+        parsePercentToBasisPoints(inputs.percent[id] ?? ""),
+      );
+      if (basisPoints.some((value) => value === null)) {
+        const error = "Enter a percentage for everyone in the split.";
+        return { shares: null, footer: error, error };
+      }
+      const total = (basisPoints as number[]).reduce((sum, bp) => sum + bp, 0);
+      if (total !== PERCENT_BASIS) {
+        const diff = PERCENT_BASIS - total;
+        const error = `${basisPointsToInputValue(total)}% of 100% assigned · ${basisPointsToInputValue(Math.abs(diff))}% ${diff > 0 ? "left" : "over"}.`;
+        return { shares: null, footer: error, error };
+      }
+      const footer = "Split by percentage.";
+      if (amount === null) {
+        return { shares: null, footer, error: null };
+      }
+      const parts = splitByWeights(amount, basisPoints as number[]);
+      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+    }
+  }
 }
 
 /**
@@ -36,10 +191,11 @@ function sameSet(a: string[], b: string[]): boolean {
  * An expense is personal or belongs to one group. For a group expense the
  * "Paid by" picker sets `user_id` (whose spend it is) to any member, while
  * `created_by` is always the signed-in user — RLS enforces both. "Split
- * between" picks the members who share the cost, equally; their shares are
- * `expense_splits` rows that must sum to the amount (a DB constraint), so
- * the save sequences delete → update → insert to keep that true at every
- * request boundary. Unticking everyone leaves the expense un-split.
+ * between" picks the members who share the cost and how — equally, by exact
+ * amounts, by shares or by percentages; their shares are `expense_splits`
+ * rows that must sum to the amount (a DB constraint), so the save sequences
+ * delete → update → insert to keep that true at every request boundary.
+ * Unticking everyone leaves the expense un-split.
  */
 export function ExpenseForm({
   categories,
@@ -59,11 +215,10 @@ export function ExpenseForm({
   const router = useRouter();
 
   const initialGroup = expense?.group_id ?? defaultGroupId ?? PERSONAL;
+  const currency = expense?.currency ?? DEFAULT_CURRENCY;
 
   const [amount, setAmount] = useState(
-    expense
-      ? minorUnitsToInputValue(expense.amount_minor_units, expense.currency)
-      : "",
+    expense ? minorUnitsToInputValue(expense.amount_minor_units, currency) : "",
   );
   const [categoryId, setCategoryId] = useState(expense?.category_id ?? "");
   const [date, setDate] = useState(expense?.expense_date ?? toLocalDateString(new Date()));
@@ -79,13 +234,28 @@ export function ExpenseForm({
           (member) => member.user_id,
         ),
   );
+  // An existing unequal split is edited as exact amounts, whatever method
+  // produced it — the rows only record the outcome.
+  const [splitMode, setSplitMode] = useState<SplitMode>(() =>
+    expense && expense.expense_splits.length > 0 && !isEqualSplit(expense)
+      ? "exact"
+      : "equal",
+  );
+  const [splitInputs, setSplitInputs] = useState<SplitInputs>(() => ({
+    exact: Object.fromEntries(
+      (expense?.expense_splits ?? []).map((split) => [
+        split.user_id,
+        minorUnitsToInputValue(split.amount_minor_units, currency),
+      ]),
+    ),
+    shares: {},
+    percent: {},
+  }));
   // Set once a new expense row is written, so a retry after a failed split
   // insert updates that row instead of creating a second expense.
   const [savedExpenseId, setSavedExpenseId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const currency = expense?.currency ?? DEFAULT_CURRENCY;
 
   const selectedGroup = groups.find((group) => group.id === groupChoice) ?? null;
   const members = selectedGroup?.members ?? [];
@@ -100,16 +270,15 @@ export function ExpenseForm({
     .filter((member) => participants.includes(member.user_id))
     .map((member) => member.user_id);
 
-  // Live share preview while the amount is typed; null when it can't split.
-  const previewAmount = parseAmountToMinorUnits(amount, currency);
-  const previewShares =
-    previewAmount !== null && previewAmount >= effectiveParticipants.length
-      ? new Map(
-          splitEqually(previewAmount, effectiveParticipants.length).map(
-            (share, index) => [effectiveParticipants[index], share] as const,
-          ),
-        )
-      : null;
+  // Live shares while the form is typed into; also what the save writes.
+  const amountMinorUnits = parseAmountToMinorUnits(amount, currency);
+  const plan = planSplit(
+    splitMode,
+    amountMinorUnits,
+    effectiveParticipants,
+    splitInputs,
+    currency,
+  );
 
   function changeGroup(value: string) {
     setGroupChoice(value);
@@ -123,19 +292,83 @@ export function ExpenseForm({
     );
   }
 
+  /** Sensible starting values for a mode: the equal split, 1 share, or 100 ÷ n. */
+  function defaultsFor(
+    mode: Exclude<SplitMode, "equal">,
+    ids: string[],
+  ): Record<string, string> {
+    if (mode === "shares") {
+      return Object.fromEntries(ids.map((id) => [id, "1"]));
+    }
+    if (mode === "percent") {
+      const parts = splitEqually(PERCENT_BASIS, ids.length);
+      return Object.fromEntries(
+        ids.map((id, index) => [id, basisPointsToInputValue(parts[index])]),
+      );
+    }
+    if (amountMinorUnits === null || amountMinorUnits < ids.length) {
+      return {};
+    }
+    const parts = splitEqually(amountMinorUnits, ids.length);
+    return Object.fromEntries(
+      ids.map((id, index) => [id, minorUnitsToInputValue(parts[index], currency)]),
+    );
+  }
+
+  function changeSplitMode(mode: SplitMode) {
+    setSplitMode(mode);
+    if (mode === "equal") {
+      return;
+    }
+    // Prefill only what the user hasn't typed yet, so switching back and
+    // forth between methods never discards their numbers.
+    setSplitInputs((current) => {
+      const missing = effectiveParticipants.filter((id) => !current[mode][id]);
+      if (missing.length === 0) {
+        return current;
+      }
+      const defaults = defaultsFor(mode, effectiveParticipants);
+      const filled = { ...current[mode] };
+      for (const id of missing) {
+        if (defaults[id] !== undefined) {
+          filled[id] = defaults[id];
+        }
+      }
+      return { ...current, [mode]: filled };
+    });
+  }
+
   function toggleParticipant(memberId: string, checked: boolean) {
     setParticipants((current) =>
       checked
         ? [...current, memberId]
         : current.filter((id) => id !== memberId),
     );
+    // A newcomer to a shares split gets one share; in the other modes the
+    // user has to say what they owe.
+    if (checked && splitMode === "shares") {
+      setSplitInputs((current) => ({
+        ...current,
+        shares: { ...current.shares, [memberId]: current.shares[memberId] || "1" },
+      }));
+    }
+  }
+
+  function setSplitInput(
+    mode: Exclude<SplitMode, "equal">,
+    memberId: string,
+    value: string,
+  ) {
+    setSplitInputs((current) => ({
+      ...current,
+      [mode]: { ...current[mode], [memberId]: value },
+    }));
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
-    const amountMinorUnits = parseAmountToMinorUnits(amount, currency);
     if (amountMinorUnits === null) {
       setError("Enter a valid amount greater than zero.");
       return;
@@ -147,19 +380,17 @@ export function ExpenseForm({
       return;
     }
 
-    // A brand-new group has exactly one member: the creator.
-    const splitUserIds =
-      groupChoice === NEW_GROUP
-        ? [userId]
-        : groupChoice === PERSONAL
-          ? []
-          : effectiveParticipants;
-
-    if (splitUserIds.length > 0 && amountMinorUnits < splitUserIds.length) {
-      setError(
-        `The amount is too small to split ${splitUserIds.length} ways.`,
-      );
+    // A brand-new group has exactly one member: the creator, who bears it all.
+    let shares: Map<string, number>;
+    if (groupChoice === NEW_GROUP) {
+      shares = new Map([[userId, amountMinorUnits]]);
+    } else if (groupChoice === PERSONAL) {
+      shares = new Map();
+    } else if (plan.shares === null) {
+      setError(plan.error ?? "Complete the split before saving.");
       return;
+    } else {
+      shares = plan.shares;
     }
 
     setPending(true);
@@ -195,16 +426,13 @@ export function ExpenseForm({
 
     const existingId = expense?.id ?? savedExpenseId;
     // Splits must be rewritten when the amount or group changes (the DB
-    // rejects an amount change while splits exist) or the people change.
+    // rejects an amount change while splits exist) or the shares change.
     // A retried save (no `expense`, but `savedExpenseId`) always rewrites.
     const splitsChanged =
       !expense ||
       expense.amount_minor_units !== amountMinorUnits ||
       expense.group_id !== groupId ||
-      !sameSet(
-        expense.expense_splits.map((split) => split.user_id),
-        splitUserIds,
-      );
+      !sameShares(expense.expense_splits, shares);
 
     let expenseId: string;
 
@@ -262,13 +490,12 @@ export function ExpenseForm({
       setSavedExpenseId(expenseId);
     }
 
-    if (splitsChanged && splitUserIds.length > 0) {
-      const shares = splitEqually(amountMinorUnits, splitUserIds.length);
+    if (splitsChanged && shares.size > 0) {
       const { error: splitError } = await supabase.from("expense_splits").insert(
-        splitUserIds.map((memberId, index) => ({
+        Array.from(shares, ([memberId, share]) => ({
           expense_id: expenseId,
           user_id: memberId,
-          amount_minor_units: shares[index],
+          amount_minor_units: share,
         })),
       );
 
@@ -418,42 +645,106 @@ export function ExpenseForm({
 
       {selectedGroup && members.length > 0 && (
         <fieldset disabled={pending}>
-          <legend className={labelClasses}>Split between</legend>
-          <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+          <legend className="sr-only">Split between</legend>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className={labelClasses}>Split between</span>
+            <div
+              role="radiogroup"
+              aria-label="Split method"
+              className="inline-flex rounded-lg border border-zinc-300 bg-zinc-100 p-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              {SPLIT_MODES.map((mode) => {
+                const active = mode.value === splitMode;
+                return (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => changeSplitMode(mode.value)}
+                    className={`rounded-md px-2.5 py-1 font-medium transition ${
+                      active
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            className={`mt-1.5 grid gap-2 ${splitMode === "equal" ? "sm:grid-cols-2" : ""}`}
+          >
             {members.map((member) => {
               const checked = effectiveParticipants.includes(member.user_id);
-              const share = previewShares?.get(member.user_id);
+              const share = plan.shares?.get(member.user_id);
+              const name = member.user_id === userId ? "You" : member.label;
               return (
-                <label
+                <div
                   key={member.user_id}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:has-[:checked]:bg-emerald-950/40"
+                  className="flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:has-[:checked]:bg-emerald-950/40"
                 >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) =>
-                      toggleParticipant(member.user_id, event.target.checked)
-                    }
-                    className="h-4 w-4 accent-emerald-600"
-                  />
-                  <span className="min-w-0 flex-1 truncate">
-                    {member.user_id === userId ? "You" : member.label}
-                  </span>
-                  {checked && share !== undefined && (
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-                      {formatMinorUnits(share, currency)}
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) =>
+                        toggleParticipant(member.user_id, event.target.checked)
+                      }
+                      className="h-4 w-4 accent-emerald-600"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{name}</span>
+                  </label>
+
+                  {checked && splitMode !== "equal" && (
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      <input
+                        type="text"
+                        inputMode={splitMode === "shares" ? "numeric" : "decimal"}
+                        aria-label={`${name} — ${
+                          splitMode === "exact"
+                            ? "amount"
+                            : splitMode === "shares"
+                              ? "shares"
+                              : "percent"
+                        }`}
+                        value={splitInputs[splitMode][member.user_id] ?? ""}
+                        onChange={(event) =>
+                          setSplitInput(splitMode, member.user_id, event.target.value)
+                        }
+                        placeholder={splitMode === "shares" ? "1" : "0"}
+                        className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                      />
+                      <span className="w-4">
+                        {splitMode === "exact"
+                          ? ""
+                          : splitMode === "shares"
+                            ? "sh"
+                            : "%"}
+                      </span>
                     </span>
                   )}
-                </label>
+
+                  {checked && splitMode !== "exact" && (
+                    <span className="w-20 shrink-0 text-right text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                      {share !== undefined ? formatMinorUnits(share, currency) : ""}
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
-          <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            {effectiveParticipants.length === 0
-              ? "Not split — whoever paid bears the whole amount."
-              : `Split equally ${effectiveParticipants.length} way${
-                  effectiveParticipants.length === 1 ? "" : "s"
-                }.`}
+          <p
+            className={`mt-1.5 text-xs ${
+              plan.error && amountMinorUnits !== null
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            {plan.footer}
           </p>
         </fieldset>
       )}
