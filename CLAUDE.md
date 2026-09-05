@@ -729,11 +729,14 @@ Done and on `main`:
   use `*.vercel.app` hosts that are **not** on the allow-list, so OAuth
   from a preview URL falls back to the Site URL — add
   `https://spendwise-web-*.vercel.app/**` if that ever matters.
+  Smoke-tested on a phone 2026-09-06: Google sign-in, add expense, open a
+  group, install to home screen (standalone + splash), offline page and
+  Retry — all working. **Phase 1 is complete.**
 
 Not yet built (immediate next steps, in rough order):
-1. Smoke-test the deployed PWA on a phone (Google sign-in, add expense,
-   install to home screen, offline page), then start on the backlog —
-   custom SMTP first, since the built-in mailer rate-limits signups.
+1. Custom SMTP for auth emails (see backlog) — the built-in mailer
+   rate-limits signups, so this gates inviting real users.
+2. Account menu contents: theme switch + display-name editor (backlog).
 
 ## Backlog (future — capture, don't build until scheduled)
 
