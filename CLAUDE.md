@@ -301,7 +301,8 @@ Done and on `main`:
   groups and all three profile FKs; index `(group_id, settled_on desc)`).
   Kept separate from `expenses` so payments never appear as spending.
   Grants: explicit REVOKE ALL then `select, insert, delete` to
-  `authenticated` (no UPDATE — delete and re-record). RLS: SELECT for
+  `authenticated` (no UPDATE until migration 010 added a column-level
+  one). RLS: SELECT for
   group members; INSERT only if `created_by` = self, self is one of the
   two parties, and both parties are current members (nobody records a
   payment between two others); DELETE by either party while still a
@@ -522,11 +523,51 @@ Done and on `main`:
   (balances equal across modes, in-debt ⇔ net ≠ 0, simplified debts sum
   to each net).
 
+- **Expense details dialog**: on any group expense row (group timeline and
+  `/`), the title is a button opening `ExpenseDetails` in the shared `Modal`
+  ("Expense details"): header (title, long date, category if visible, group,
+  "Added by …", added time, amount), a "Paid by" list (largest first), a
+  "Split N ways" list of every participant's share, and "Who owes whom for
+  this" — `attributeExpenseDebts(payers, splits)` rendered as "X owes Y"
+  rows (viewer's red/green), i.e. exactly the per-expense debts the group
+  ledger sums, with an un-split expense saying it changes no balance.
+  "Edit expense" in the footer (creator only) closes the dialog and opens
+  the inline `ExpenseForm`. `expenseMemberNamer(expense, groups, userId)`
+  (exported from `expense-details.tsx`) is the one place that names people
+  on an expense — "you", the primary payer from the embedded profile,
+  current members from the `GroupOption`, else "a former member"; the
+  `sentence` option capitalises only those two placeholders — and
+  `ExpenseItem`'s meta line now uses it too. Personal expense titles stay
+  plain text (nothing beyond the row to show). No schema change.
+
+- **Migration 010** applied — editing a recorded payment. A **column-level**
+  `grant update (amount_minor_units, settled_on, note)` on `settlements`
+  to `authenticated` (no table-wide UPDATE, so `has_table_privilege`
+  stays false and writes to `from_user_id`, `to_user_id`, `group_id`,
+  `created_by`, `currency` fail 42501 at the grant layer) plus
+  `settlements_update_party_members`: USING = WITH CHECK = the caller is
+  a party **and both parties are current members** (stricter than
+  DELETE, which only needs the caller to be a member: a former member's
+  balance is zero by construction and can never be settled again, so an
+  edit must not reopen one). Self-check asserts 4 policies, the exact
+  column set via `has_column_privilege`, and nothing for `anon`. Verified
+  in a rolled-back DO block (12 cases: payer/payee edit 1 row, third
+  member 0 rows, party/currency/recorder/group columns 42501, zero amount
+  23514, anon 42501, edit after the counterparty leaves 0 rows while
+  delete still works). No type change (grants only).
+- **Edit a recorded payment**: `SettleUpForm` takes either `debt` (record)
+  or `settlement` (edit) — edit mode prefills amount/date/note, titles
+  "Edit payment" / "Save changes", drops the "owed" hint, notes that who
+  paid whom is fixed (delete and re-record to turn it around), and
+  updates with `.select("id").maybeSingle()` so a policy-filtered update
+  shows an explanatory error instead of silently succeeding.
+  `SettlementItem` gets a pencil in its `w-15` slot (before the trash)
+  for a party while both parties are in `labels`, opening the form
+  inline in place of the row like expense rows do.
+
 Not yet built (immediate next steps, in rough order):
-1. **Group activity polish**: expense detail view with every participant's
-   share; edit a recorded payment (needs an UPDATE policy for either party).
-2. **Invite links** in the members dialog.
-3. PWA config (manifest + service worker), then deploy to Vercel.
+1. **Invite links** in the members dialog.
+2. PWA config (manifest + service worker), then deploy to Vercel.
 
 ## Backlog (future — capture, don't build until scheduled)
 
@@ -551,10 +592,9 @@ Not yet built (immediate next steps, in rough order):
   Splitwise group timeline), and a "Friends"-style cross-group view of
   what you owe each person overall.
 - **Settle-up niceties**: "settle all" for one counterparty across
-  currencies, edit a recorded payment (would need an UPDATE policy for
-  either party), reminders/nudges (needs Notifications), and a per-expense
-  detail view listing every participant's share (today only the viewer's
-  position is shown on the row).
+  currencies, and reminders/nudges (needs Notifications). Editing a
+  payment is done (migration 010); changing its direction or currency is
+  deliberately delete-and-re-record.
 - **Personal stats vs. group spend**: decide whether `/stats` should count
   the user's split share of group expenses (today group expenses are
   excluded entirely).

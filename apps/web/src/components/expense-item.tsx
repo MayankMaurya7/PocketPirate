@@ -11,14 +11,11 @@ import {
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
+import { ExpenseDetails, expenseMemberNamer } from "@/components/expense-details";
 import { ExpenseForm } from "@/components/expense-form";
 import { PencilIcon, TrashIcon } from "@/components/icons";
-import {
-  type CategoryOption,
-  type ExpenseListItem,
-  type GroupOption,
-  memberLabel,
-} from "@/lib/types";
+import { Modal } from "@/components/modal";
+import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
 
 /** "A and B" / "A, B and C" — the group's own list style, "you" last. */
 function joinNames(names: string[]): string {
@@ -32,7 +29,9 @@ function joinNames(names: string[]): string {
  * One expense row: category dot, description, meta line, amount, and — only
  * for expenses this user entered — edit/delete. RLS already limits writes to
  * `created_by`; hiding the buttons just avoids offering an action that would
- * fail.
+ * fail. For a group expense the title opens a details dialog with every
+ * payer's and participant's amount (personal expenses have nothing beyond
+ * the row to show).
  */
 export function ExpenseItem({
   expense,
@@ -49,6 +48,7 @@ export function ExpenseItem({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +91,8 @@ export function ExpenseItem({
 
   const category = expense.categories;
   const enteredByMe = expense.created_by === userId;
+  const title = expense.description || category?.name || "Expense";
+  const nameOf = expenseMemberNamer(expense, groups, userId);
 
   const meta: string[] = [];
   // Categories are private per user, so another member's category is not
@@ -112,20 +114,10 @@ export function ExpenseItem({
     }
     const payers = expensePayers(expense);
     if (payers.length === 1) {
-      meta.push(
-        expense.user_id === userId
-          ? "Paid by you"
-          : `Paid by ${memberLabel(expense.payer)}`,
-      );
+      meta.push(`Paid by ${nameOf(expense.user_id)}`);
     } else {
       // Several payers: name them largest share first, the viewer last as
-      // "you". Members who have since left are not in the group option.
-      const members = groups.find((group) => group.id === expense.group_id)?.members;
-      const nameOf = (id: string) =>
-        id === expense.user_id
-          ? memberLabel(expense.payer)
-          : (members?.find((member) => member.user_id === id)?.label ??
-            "a former member");
+      // "you".
       const others = payers
         .filter((payer) => payer.user_id !== userId)
         .sort(
@@ -177,9 +169,20 @@ export function ExpenseItem({
       />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          {expense.description || category?.name || "Expense"}
-        </p>
+        {expense.group_id ? (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            title="Show details"
+            className="block max-w-full truncate text-left text-sm font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+          >
+            {title}
+          </button>
+        ) : (
+          <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            {title}
+          </p>
+        )}
         <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
           {meta.join(" · ")}
           <AddedAt iso={expense.created_at} date={expense.expense_date} />
@@ -237,6 +240,28 @@ export function ExpenseItem({
           </>
         )}
       </div>
+
+      {expense.group_id && (
+        <Modal
+          open={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+          title="Expense details"
+        >
+          <ExpenseDetails
+            expense={expense}
+            groups={groups}
+            userId={userId}
+            onEdit={
+              enteredByMe
+                ? () => {
+                    setDetailsOpen(false);
+                    setEditing(true);
+                  }
+                : undefined
+            }
+          />
+        </Modal>
+      )}
     </li>
   );
 }

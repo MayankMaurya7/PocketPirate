@@ -7,13 +7,15 @@ import { formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
-import { BanknoteIcon, TrashIcon } from "@/components/icons";
+import { BanknoteIcon, PencilIcon, TrashIcon } from "@/components/icons";
+import { SettleUpForm } from "@/components/settle-up-form";
 import type { MemberLabels, Settlement } from "@/lib/types";
 
 /**
  * One recorded payment: who paid whom, amount, date, who recorded it.
- * Either party can delete it (RLS enforces this; the button is only
- * offered to them).
+ * Either party can edit (amount, date, note) or delete it — RLS enforces
+ * this; the buttons are only offered to them. Editing also needs the other
+ * party to still be a member, so the pencil is hidden once they have left.
  */
 export function SettlementItem({
   settlement,
@@ -25,6 +27,7 @@ export function SettlementItem({
   labels: MemberLabels;
 }) {
   const router = useRouter();
+  const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +37,10 @@ export function SettlementItem({
   const paidTo = nameOf(settlement.to_user_id);
   const isParty =
     settlement.from_user_id === userId || settlement.to_user_id === userId;
+  const canEdit =
+    isParty &&
+    settlement.from_user_id in labels &&
+    settlement.to_user_id in labels;
 
   const meta: string[] = [
     new Date(`${settlement.settled_on}T00:00:00`).toLocaleDateString(undefined, {
@@ -70,6 +77,21 @@ export function SettlementItem({
     router.refresh();
   }
 
+  if (editing) {
+    return (
+      <li className="p-5">
+        <SettleUpForm
+          groupId={settlement.group_id}
+          userId={userId}
+          settlement={settlement}
+          fromLabel={paidBy}
+          toLabel={paidTo}
+          onDone={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
+
   return (
     <li className="flex items-center gap-4 px-5 py-4">
       <span
@@ -100,7 +122,18 @@ export function SettlementItem({
       </span>
 
       {/* Same slot width as expense rows so the timeline's amounts align. */}
-      <div className="flex w-15 shrink-0 justify-end">
+      <div className="flex w-15 shrink-0 justify-end gap-1">
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={pending}
+            aria-label="Edit payment"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <PencilIcon />
+          </button>
+        )}
         {isParty && (
           <button
             type="button"
