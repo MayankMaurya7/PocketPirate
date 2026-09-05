@@ -483,7 +483,7 @@ Done and on `main`:
   transaction as the creator (create with 2 payers / 3 splits, edit
   changing amount + primary payer + rows, back to one payer, and a
   primary-payer change with rows present correctly refused).
-- **Migration 009** (written, verified, **not yet pushed** — see below) —
+- **Migration 009** applied —
   `groups.simplify_debts boolean not null default false` plus a rewrite of
   `private.has_unsettled_balance` (same signature/grants/caller) that
   reads the flag: **pairwise** per counterparty when off (as before),
@@ -523,13 +523,6 @@ Done and on `main`:
   to each net).
 
 Not yet built (immediate next steps, in rough order):
-0. **Push migration 009 + regenerate types** (blocked in-session: the
-   `db push` was denied, so the web code references `simplify_debts`
-   ahead of the generated types): `pnpm supabase db push --linked`, then
-   `pnpm supabase gen types typescript --linked > packages/shared/src/database.types.ts`
-   (expected diff: `simplify_debts` in `groups` Row/Insert/Update only),
-   then `tsc --noEmit` in apps/web — it passed against a temporary,
-   restored copy of that exact diff.
 1. **Group activity polish**: expense detail view with every participant's
    share; edit a recorded payment (needs an UPDATE policy for either party).
 2. **Invite links** in the members dialog.

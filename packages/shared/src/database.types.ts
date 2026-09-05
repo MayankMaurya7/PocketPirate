@@ -265,18 +265,21 @@ export type Database = {
           created_by: string
           id: string
           name: string
+          simplify_debts: boolean
         }
         Insert: {
           created_at?: string
           created_by: string
           id?: string
           name: string
+          simplify_debts?: boolean
         }
         Update: {
           created_at?: string
           created_by?: string
           id?: string
           name?: string
+          simplify_debts?: boolean
         }
         Relationships: [
           {
