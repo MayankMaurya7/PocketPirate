@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeRelativePath } from "@/lib/safe-path";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -15,11 +16,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   // `next` lets a caller resume where they left off; only relative paths are
   // honoured so this can't be used as an open redirect.
-  const nextParam = searchParams.get("next");
-  const next =
-    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
-      ? nextParam
-      : "/";
+  const next = safeRelativePath(searchParams.get("next")) ?? "/";
 
   if (!code) {
     // Supabase reports provider failures (e.g. a cancelled consent screen) as

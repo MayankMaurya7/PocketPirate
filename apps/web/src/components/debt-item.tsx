@@ -57,7 +57,7 @@ export function DebtItem({
   const amount = formatMinorUnits(debt.minorUnits, debt.currency);
 
   return (
-    <li className="flex items-center gap-4 px-5 py-4">
+    <li className="flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
       <span
         aria-hidden="true"
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
@@ -86,29 +86,34 @@ export function DebtItem({
         )}
       </div>
 
-      <span
-        className={`shrink-0 text-sm font-semibold tabular-nums ${
-          iOwe
-            ? "text-red-600 dark:text-red-400"
-            : owedToMe
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-zinc-700 dark:text-zinc-200"
-        }`}
-      >
-        {amount}
-      </span>
-
-      {/* Fixed-width slot so amounts line up on rows without a button. */}
-      <div className="flex w-32 shrink-0 justify-end">
-        {canSettle && (
-          <button
-            type="button"
-            onClick={() => setSettling(true)}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            {iOwe ? "Settle up" : "Record payment"}
-          </button>
-        )}
+      {/*
+        On phones the button sits under the amount so the name keeps its
+        width; from `sm` up they share the row, with a fixed-width slot so
+        amounts line up on rows without a button.
+      */}
+      <div className="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-4">
+        <span
+          className={`text-sm font-semibold tabular-nums ${
+            iOwe
+              ? "text-red-600 dark:text-red-400"
+              : owedToMe
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-zinc-700 dark:text-zinc-200"
+          }`}
+        >
+          {amount}
+        </span>
+        <div className="flex justify-end sm:w-32">
+          {canSettle && (
+            <button
+              type="button"
+              onClick={() => setSettling(true)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              {iOwe ? "Settle up" : "Record payment"}
+            </button>
+          )}
+        </div>
       </div>
     </li>
   );

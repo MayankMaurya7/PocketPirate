@@ -93,7 +93,7 @@ export function SettlementItem({
   }
 
   return (
-    <li className="flex items-center gap-4 px-5 py-4">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-4">
       <span
         aria-hidden="true"
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
@@ -117,24 +117,28 @@ export function SettlementItem({
         )}
       </div>
 
-      <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+      <span className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
         {formatMinorUnits(settlement.amount_minor_units, settlement.currency)}
       </span>
 
-      {/* Same slot width as expense rows so the timeline's amounts align. */}
-      <div className="flex w-15 shrink-0 justify-end gap-1">
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            disabled={pending}
-            aria-label="Edit payment"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            <PencilIcon />
-          </button>
-        )}
-        {isParty && (
+      {/*
+        Same behaviour and slot width as expense rows so the timeline's
+        amounts align: actions wrap under the amount on phones and take a
+        fixed-width slot in the row from `sm` up.
+      */}
+      {isParty ? (
+        <div className="flex w-full justify-end gap-1 sm:w-15 sm:shrink-0">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              disabled={pending}
+              aria-label="Edit payment"
+              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              <PencilIcon />
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDelete}
@@ -144,8 +148,10 @@ export function SettlementItem({
           >
             <TrashIcon />
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div aria-hidden="true" className="hidden sm:block sm:w-15 sm:shrink-0" />
+      )}
     </li>
   );
 }

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { safeRelativePath } from "@/lib/safe-path";
 import { createClient } from "@/lib/supabase/server";
 
 import { LoginForm } from "./login-form";
@@ -11,13 +12,21 @@ export const metadata: Metadata = {
   description: "Sign in or create your Spendwise account.",
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  // `next` is where to go after signing in (an invite link, say). Only a
+  // relative path is honoured, so it cannot bounce anyone off-site.
+  const next = safeRelativePath((await searchParams).next) ?? "/";
+
   // Someone who already has a session has no business on the login page.
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
 
   if (data?.claims) {
-    redirect("/");
+    redirect(next);
   }
 
   return (

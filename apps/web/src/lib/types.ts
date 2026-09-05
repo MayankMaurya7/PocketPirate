@@ -87,6 +87,15 @@ export type GroupOption = {
 export type Settlement = Tables<"settlements">;
 
 /**
+ * A group's current invite link (see migration 011); owners only. `expired`
+ * is judged by the server when the page renders, so the client never needs
+ * the clock during render.
+ */
+export type GroupInvite = Pick<Tables<"group_invites">, "token" | "expires_at"> & {
+  expired: boolean;
+};
+
+/**
  * Display label per member id for a group page. Members who have left are
  * absent — callers fall back to a "former member" label.
  */

@@ -116,11 +116,11 @@ export function GroupActions({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="min-w-0 break-words text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           {group.name}
         </h1>
 
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           {isOwner && (
             <>
               <button

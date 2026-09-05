@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/expense-filters";
 import { groupLedger } from "@/lib/balances";
+import { toGroupInvite } from "@/lib/invites";
 import { EXPENSE_SELECT, toGroupOption, totalsByCurrency } from "@/lib/expenses";
 import { AddExpenseFab } from "@/components/add-expense-fab";
 import { AppHeader } from "@/components/app-header";
@@ -15,6 +16,7 @@ import { MembersDialog } from "@/components/members-dialog";
 import { SimplifyDebtsToggle } from "@/components/simplify-debts-toggle";
 import {
   type ExpenseListItem,
+  type GroupInvite,
   type GroupMember,
   type MemberLabels,
   type Settlement,
@@ -73,8 +75,12 @@ export default async function GroupPage({
   const isOwner = me?.role === "owner";
   const ownerCount = members.filter((member) => member.role === "owner").length;
 
-  const [{ data: categories }, { data: expenses }, { data: settlements }] =
-    await Promise.all([
+  const [
+    { data: categories },
+    { data: expenses },
+    { data: settlements },
+    { data: invite },
+  ] = await Promise.all([
       supabase.from("categories").select("id, name, color, icon").order("name"),
       supabase
         .from("expenses")
@@ -88,12 +94,19 @@ export default async function GroupPage({
         .eq("group_id", group.id)
         .order("settled_on", { ascending: false })
         .order("created_at", { ascending: false }),
+      // RLS only returns the row to owners; everyone else gets null.
+      supabase
+        .from("group_invites")
+        .select("token, expires_at")
+        .eq("group_id", group.id)
+        .maybeSingle(),
     ]);
 
   const categoryList = categories ?? [];
   const groupOption = toGroupOption(group);
   const expenseList: ExpenseListItem[] = expenses ?? [];
   const settlementList: Settlement[] = settlements ?? [];
+  const inviteLink: GroupInvite | null = invite ? toGroupInvite(invite) : null;
   const totals = totalsByCurrency(expenseList);
   const labels: MemberLabels = Object.fromEntries(
     members.map((member) => [member.user_id, memberLabel(member.profiles)]),
@@ -128,7 +141,7 @@ export default async function GroupPage({
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="groups" />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-28 pt-10">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-28 pt-6 sm:pt-10">
         <Link
           href="/groups"
           className="text-sm text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -153,6 +166,7 @@ export default async function GroupPage({
             isOwner={isOwner}
             balances={balances}
             showBalances={hasLedger}
+            invite={inviteLink}
           />
         </div>
 

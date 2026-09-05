@@ -67,7 +67,7 @@ export function MemberItem({
   }
 
   return (
-    <li className="flex items-center gap-4 px-5 py-4">
+    <li className="flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
       {member.profiles?.avatar_url ? (
         // eslint-disable-next-line @next/next/no-img-element -- remote OAuth avatars, arbitrary hosts
         <img

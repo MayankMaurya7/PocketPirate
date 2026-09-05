@@ -56,7 +56,7 @@ export default async function StatsPage() {
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="stats" />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:py-10">
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           Stats
         </h1>

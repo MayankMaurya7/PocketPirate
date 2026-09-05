@@ -836,7 +836,7 @@ export function ExpenseForm({
       {selectedGroup && payerPlan && (
         <fieldset disabled={pending}>
           <legend className={labelClasses}>Who paid what</legend>
-          <div className="mt-1.5 grid gap-2">
+          <div className="mt-1.5 grid grid-cols-1 gap-2">
             {members.map((member) => {
               const checked = effectivePayerIds.includes(member.user_id);
               const name = nameOf(member.user_id, member.label);
@@ -919,7 +919,7 @@ export function ExpenseForm({
           </div>
 
           <div
-            className={`mt-1.5 grid gap-2 ${splitMode === "equal" ? "sm:grid-cols-2" : ""}`}
+            className={`mt-1.5 grid grid-cols-1 gap-2 ${splitMode === "equal" ? "sm:grid-cols-2" : ""}`}
           >
             {members.map((member) => {
               const checked = effectiveParticipants.includes(member.user_id);

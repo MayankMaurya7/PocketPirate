@@ -39,7 +39,7 @@ export default async function GroupsPage() {
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="groups" />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:py-10">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Groups
@@ -68,7 +68,7 @@ export default async function GroupsPage() {
               <li key={group.id}>
                 <Link
                   href={`/groups/${group.id}`}
-                  className="flex items-center gap-4 px-5 py-4 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  className="flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50 sm:gap-4 sm:px-5 sm:py-4 dark:hover:bg-zinc-800/60"
                 >
                   <span
                     aria-hidden="true"

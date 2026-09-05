@@ -3,15 +3,27 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { safeRelativePath } from "@/lib/safe-path";
 import { createClient } from "@/lib/supabase/client";
 
 type Mode = "signin" | "signup";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // The callback route bounces OAuth / confirmation failures back here with
   // the reason in the query string.
-  const callbackError = useSearchParams().get("error");
+  const callbackError = searchParams.get("error");
+  // Where to land after signing in — set by pages that need a session, such
+  // as an invite link. Relative paths only (never an open redirect).
+  const nextPath = safeRelativePath(searchParams.get("next")) ?? "/";
+  const joiningGroup = nextPath.startsWith("/join/");
+  // Both OAuth and email confirmation come back through /callback, which
+  // forwards to `next` once the session cookies are set.
+  const callbackUrl = () =>
+    `${window.location.origin}/callback${
+      nextPath === "/" ? "" : `?next=${encodeURIComponent(nextPath)}`
+    }`;
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -25,7 +37,11 @@ export function LoginForm() {
     setError(null);
     setConfirmationSent(false);
     if (callbackError) {
-      router.replace("/login");
+      router.replace(
+        nextPath === "/"
+          ? "/login"
+          : `/login?next=${encodeURIComponent(nextPath)}`,
+      );
     }
   }
 
@@ -49,8 +65,8 @@ export function LoginForm() {
       }
 
       // refresh() re-runs the server components with the new session cookies,
-      // so "/" renders as signed in rather than from a stale cache.
-      router.replace("/");
+      // so the destination renders as signed in rather than from a stale cache.
+      router.replace(nextPath);
       router.refresh();
       return;
     }
@@ -59,7 +75,7 @@ export function LoginForm() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/callback`,
+        emailRedirectTo: callbackUrl(),
       },
     });
 
@@ -74,7 +90,7 @@ export function LoginForm() {
     // If confirmation is ever disabled, a session comes back and we can go
     // straight to the app.
     if (data.session) {
-      router.replace("/");
+      router.replace(nextPath);
       router.refresh();
       return;
     }
@@ -91,7 +107,7 @@ export function LoginForm() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/callback`,
+        redirectTo: callbackUrl(),
       },
     });
 
@@ -152,9 +168,13 @@ export function LoginForm() {
           {isSignup ? "Create your account" : "Welcome back"}
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          {isSignup
-            ? "Start tracking where your money goes."
-            : "Sign in to your Spendwise account."}
+          {joiningGroup
+            ? isSignup
+              ? "Create an account to join the group you were invited to."
+              : "Sign in to join the group you were invited to."
+            : isSignup
+              ? "Start tracking where your money goes."
+              : "Sign in to your Spendwise account."}
         </p>
       </div>
 
@@ -247,7 +267,7 @@ export function LoginForm() {
         className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus:ring-offset-zinc-950"
       >
         <GoogleLogo />
-        Sign in with Google
+        {isSignup ? "Sign up with Google" : "Sign in with Google"}
       </button>
 
       <p className="mt-8 text-center text-sm text-zinc-600 dark:text-zinc-400">

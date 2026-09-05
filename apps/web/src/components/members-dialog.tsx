@@ -3,11 +3,12 @@
 import { useState } from "react";
 
 import { AddMember } from "@/components/add-member";
+import { InviteLink } from "@/components/invite-link";
 import { MemberItem } from "@/components/member-item";
 import { Modal } from "@/components/modal";
 import { UsersIcon } from "@/components/icons";
 import type { BalanceEntry } from "@/lib/balances";
-import type { GroupMember } from "@/lib/types";
+import type { GroupInvite, GroupMember } from "@/lib/types";
 
 /**
  * The "N people" chip under the group title, opening a dialog with the
@@ -21,6 +22,7 @@ export function MembersDialog({
   isOwner,
   balances,
   showBalances,
+  invite,
 }: {
   groupId: string;
   members: GroupMember[];
@@ -28,6 +30,8 @@ export function MembersDialog({
   isOwner: boolean;
   balances: Map<string, BalanceEntry[]>;
   showBalances: boolean;
+  /** The group's current invite link; only fetched for (and shown to) owners. */
+  invite: GroupInvite | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -50,7 +54,8 @@ export function MembersDialog({
         )}
 
         {isOwner && (
-          <div className="mb-3">
+          <div className="mb-3 space-y-3">
+            <InviteLink groupId={groupId} invite={invite} />
             <AddMember groupId={groupId} />
           </div>
         )}

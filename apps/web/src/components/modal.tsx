@@ -51,7 +51,7 @@ export function Modal({
       className="m-auto w-[calc(100%-2rem)] max-w-xl rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
     >
       {open && (
-        <div className="max-h-[85vh] overflow-y-auto p-5">
+        <div className="max-h-[85dvh] overflow-y-auto p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
               {title}

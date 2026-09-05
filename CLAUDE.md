@@ -140,11 +140,15 @@ Done and on `main`:
 - **Auth UI**: combined login/signup page at `/login` (email+password + Google
   OAuth button + toggle), OAuth/email-confirm callback at `/callback`. Email
   signup tested working end-to-end (profile + categories seeded on signup,
-  confirmed in dashboard). Google OAuth built but needs dashboard credentials
-  to function.
+  confirmed in dashboard). Google OAuth configured 2026-09-06: Google Cloud
+  project "SpendWise" (OAuth client "SpendWise web", redirect URI
+  `https://ymsixpeyipgtetfucnkp.supabase.co/auth/v1/callback`), provider
+  enabled in Supabase with "allow without email" OFF, Site URL
+  `http://localhost:3000`, redirect allow-list `http://localhost:3000/**`.
+  Add the production origin (`https://<host>/**`) when deploying.
 - **Authenticated home page** at `/`: server component using `getClaims()`,
-  redirects signed-out users to `/login`; header (wordmark, email, sign-out
-  client component).
+  redirects signed-out users to `/login`; header (wordmark, nav tabs,
+  account menu — see "Mobile layout" for the current `AppHeader`).
 - **Personal expense CRUD** on the home page: server-fetched list (category
   joined, newest first, `group_id is null`), add/edit/delete via client
   components + browser client + `router.refresh()`. Shared `ExpenseForm`
@@ -158,8 +162,8 @@ Done and on `main`:
   `icon` column exists but is not exposed in the UI yet. Unique-name violation
   (23505) mapped to a friendly message. Delete confirm states how many expenses
   become uncategorised (FK is `on delete set null`). Shared `AppHeader`
-  (wordmark + Expenses/Categories nav + sign-out) used by `/` and
-  `/categories`; list-row icons live in `components/icons.tsx`.
+  (wordmark + nav + account menu) used by `/` and `/categories`; list-row
+  icons live in `components/icons.tsx`.
 - **Filtered list views** on `/`: filter by category (incl. "Uncategorised")
   and date range (Today / This week / This month / This year / Custom
   from–to). Filter state lives in URL search params (`category`, `range`,
@@ -181,9 +185,9 @@ Done and on `main`:
   SECURITY DEFINER RPC (owner check runs BEFORE the email lookup so non-owners
   learn nothing; user-facing error messages are raised verbatim and shown
   as-is by the client; EXECUTE granted to `authenticated` only). Accepted
-  trade-off: an owner learns whether an email has an account — an invite-link
-  flow would avoid this but needs its own table (backlog). Co-members can see
-  each other's email via the existing profiles SELECT policy.
+  trade-off: an owner learns whether an email has an account — invite links
+  (migration 011) avoid this. Co-members can see each other's email via the
+  existing profiles SELECT policy.
 - **Groups UI (membership)**: `/groups` lists the user's groups (member count,
   Owner badge) with a create form (`AddGroup` → `GroupForm`, navigates to the
   new group; the id is minted client-side with `crypto.randomUUID()` because
@@ -354,7 +358,12 @@ Done and on `main`:
   the edit+delete pair on expense and payment rows, `w-7` for the remove
   icon on member rows, `w-32` for the Settle up / Record payment button on
   debt rows), so amounts share one right edge across the list. Keep this
-  when adding new row types or actions.
+  when adding new row types or actions. **The slot only exists from `sm`
+  up** (see "Mobile layout" below): on phones the actions wrap onto their
+  own line under the amount (`w-full` + `flex-wrap` on the row; a row
+  without actions renders a `hidden sm:block` placeholder instead) and the
+  debt row stacks amount over button, so amounts still share the right
+  edge without stealing width from the name.
 
 - **Migration 007** applied — leave/remove guards on `group_members`:
   `group_members_guard_delete`, a BEFORE DELETE row trigger
@@ -565,12 +574,95 @@ Done and on `main`:
   for a party while both parties are in `labels`, opening the form
   inline in place of the row like expense rows do.
 
+- **Migration 011** applied — `group_invites` (`group_id` **unique** →
+  one live link per group, cascade; `token` unique, `^[0-9a-f]{64}$` =
+  two `gen_random_uuid()`s since pgcrypto is not installed; `created_by`
+  cascade from profiles; `expires_at`, set to **30 days** on create).
+  Grants: REVOKE ALL then `select, delete` to `authenticated` (no
+  INSERT/UPDATE — only the RPC writes). RLS: SELECT and DELETE for owners
+  only (`private.is_group_owner`), so the token never reaches a
+  non-owner. Three SECURITY DEFINER RPCs, EXECUTE to `authenticated`
+  only: `create_group_invite(_group_id) → token` (owner check, deletes
+  the old row and mints a fresh token + expiry = "reset"),
+  `preview_group_invite(_token) → table(group_id, group_name,
+  member_count, already_member, invited_by)` (zero rows for an unknown or
+  expired token; `invited_by` is the inviter's display name only, never
+  their email, since links get forwarded) and `accept_group_invite(_token)
+  → group_id` (inserts a `member` row; no-op if already a member; raises
+  "This invite link is invalid or has expired."). Self-check covers RLS,
+  policy count, exact grants, the PUBLIC ACL entry, the unique group_id
+  and, per function, EXECUTE for authenticated / none for anon /
+  SECURITY DEFINER. Verified live via a rolled-back `db query` run of the
+  migration + a 16-case DO block (create, reset rotates, member/outsider
+  refused, outsider sees no row, preview as outsider, bogus/stale token
+  empty, accept joins as member, second accept no-op, already_member,
+  member sees/deletes nothing, UPDATE 42501, expired token refused,
+  anon EXECUTE/SELECT 42501, owner delete, group-delete cascade). Types
+  regenerated.
+- **Invite links UI**: `InviteLink` (owner-only, top of the members
+  dialog above add-by-email): "Create link" → readonly URL
+  `<origin>/join/<token>` + Copy (clipboard, "Copied" for 2 s), expiry
+  date ("This link has expired. Reset it…" in red when past — judged by
+  the server via `toGroupInvite` in `lib/invites.ts` because the React
+  purity lint forbids `Date.now()` in render), Reset (RPC again) and
+  Remove (RLS delete). The page fetches `group_invites` for the group
+  with `.maybeSingle()` — RLS hands it back only to owners — and passes
+  `GroupInvite | null` (`lib/types.ts`) to `MembersDialog`. `/join/[token]`
+  (server page): signed-out → `redirect("/login?next=/join/<token>")`;
+  signed-in → `preview_group_invite` → "invalid or expired" card, "You're
+  already in X" with an Open link, or "<name> invited you to join X · N
+  people so far" with `JoinGroup` (client button → `accept_group_invite`
+  → `router.replace("/groups/<id>")`). **Login `next` support**:
+  `lib/safe-path.ts` `safeRelativePath` (relative path only; rejects
+  `//`, absolute URLs and backslashes — used by `/callback`, `/login` and
+  the form). `/login` redirects an already-signed-in visitor to `next`,
+  the form sends password sign-in to `next`, and both email-confirmation
+  (`emailRedirectTo`) and Google (`redirectTo`) go to
+  `/callback?next=…`, which already forwarded to `next`. The form's
+  subtitle says "Sign in / Create an account to join the group you were
+  invited to" when `next` starts with `/join/`. **Note**: Supabase's
+  redirect allow-list must accept `/callback?next=…` — gotrue matches on
+  hostname against the Site URL, so a same-host deploy passes, but add
+  `https://<host>/callback**` (or `/**`) under Authentication → URL
+  Configuration when deploying.
+- **Mobile layout** (single breakpoint, Tailwind `sm` = 640px; the layout
+  was desktop-only before and fell apart at 375px). **`AppHeader`** =
+  wordmark, the nav as **underline tabs** (`NAV` array; active tab
+  `border-b-2 border-emerald-600`, `aria-current="page"`; the nav has
+  `-mb-px` so the underline meets the header's bottom border) and an
+  **`AccountMenu`** (gear icon, `components/account-menu.tsx`: a
+  disclosure panel — aria-expanded/controls, not an ARIA menu — with
+  "Signed in as <email>" and Sign out; closes on Escape / outside
+  pointerdown; this is where theme and profile settings should go later).
+  The old `SignOutButton` is gone. On phones the tabs form their own
+  full-width row under the wordmark + gear (`order-last basis-full`, each
+  tab `flex-1`); from `sm` up they sit inline (`sm:self-stretch`) on one
+  4rem line. **Bare `grid` is a trap**: an implicit `auto` column sizes to
+  the widest child, so a list of `truncate` rows overflows — always give
+  the grid `grid-cols-1` (= `minmax(0,1fr)`) as the expense form's payer
+  and split lists now do (this was the horizontal scroll in the New
+  expense dialog). List rows (expense,
+  payment, debt, member, category, group list) use `gap-3 px-4 py-3` on
+  phones and the old `gap-4 px-5 py-4` from `sm`; expense/payment action
+  icons and the debt row's button move under the amount on phones (see
+  the row alignment convention). `Modal` pads `p-4 sm:p-5` and caps at
+  `85dvh`. The home filter bar's category select + Clear take a full line
+  under the date chips on phones (`w-full sm:ml-auto sm:w-auto`, select
+  `flex-1`). Page `main` padding is `py-6 sm:py-10`. Group title is
+  `min-w-0 break-words` with `shrink-0` action buttons. Stats was already
+  responsive (2-up tiles, `sm:` grid in `CategoryBars`, `ResizeObserver`
+  chart). Not done: safe-area insets for the FAB, a bottom-sheet modal.
+
 Not yet built (immediate next steps, in rough order):
-1. **Invite links** in the members dialog.
-2. PWA config (manifest + service worker), then deploy to Vercel.
+1. PWA config (manifest + service worker), then deploy to Vercel.
 
 ## Backlog (future — capture, don't build until scheduled)
 
+- **Account menu contents**: a theme switch (System / Light / Dark) and a
+  profile/display-name editor inside `AccountMenu`. Theme needs Tailwind's
+  `dark:` variant moved from `prefers-color-scheme` to a `data-theme`
+  attribute (`@custom-variant dark`) plus a persisted preference applied
+  before hydration to avoid a flash.
 - **Notifications** system (in-app; new table) — including on-behalf-expense
   notification events to group members. Phase 2-ish migration.
 - **Location-based currency default** (app logic): if the user grants location,
@@ -598,9 +690,11 @@ Not yet built (immediate next steps, in rough order):
 - **Personal stats vs. group spend**: decide whether `/stats` should count
   the user's split share of group expenses (today group expenses are
   excluded entirely).
-- **Invite links** for groups (token table + join RPC) as an alternative to
-  add-by-email, which reveals whether an email has an account. Belongs in
-  the members dialog next to add-by-email.
+- **Invite-link niceties**: multiple links per group / per-link expiry
+  choice / "never expires" (today: one link, fixed 30 days, owner reset);
+  a signed-out preview of the group name on `/login` (the preview RPC is
+  `authenticated`-only on purpose); auto-join straight from `/join` after
+  sign-up instead of a Join button.
 - **Group ownership transfer**: the last-owner guard (migration 007) now
   means a sole owner can only delete the group, never hand it over. Add a
   `transfer_group_ownership` RPC (atomic demote+promote; there is no

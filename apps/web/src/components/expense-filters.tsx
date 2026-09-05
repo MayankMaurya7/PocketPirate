@@ -159,7 +159,8 @@ export function ExpenseFilters({
           Custom
         </button>
 
-        <div className="ml-auto flex items-center gap-2">
+        {/* Own line on phones (the chips already fill the width), right-aligned beside them from `sm` up. */}
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <span
             role="status"
             className={`text-xs text-zinc-400 transition-opacity dark:text-zinc-500 ${
@@ -178,7 +179,7 @@ export function ExpenseFilters({
             onChange={(event) =>
               apply({ ...filters, category: event.target.value || null })
             }
-            className={selectClasses}
+            className={`${selectClasses} min-w-0 flex-1 sm:flex-none`}
           >
             <option value="">All categories</option>
             <option value={UNCATEGORISED}>Uncategorised</option>
