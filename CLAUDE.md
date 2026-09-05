@@ -365,8 +365,9 @@ Done and on `main`:
   API roles; reached only through the trigger). "Open" is judged **per
   counterparty and per currency** — the same direct pairwise ledger
   `groupLedger` shows — not on the net position, so owing A while being
-  owed the same by B still blocks. Expenses of every status count, as in
-  the client. Messages are user-facing and shown verbatim; wording is
+  owed the same by B still blocks (since migration 009 this is the
+  `simplify_debts = false` branch; when on, net position decides).
+  Expenses of every status count, as in the client. Messages are user-facing and shown verbatim; wording is
   first-person when `auth.uid()` is the leaver, third-person when an owner
   removes someone. **Cascades pass**: the trigger returns early when the
   group or the profile row is already gone in the transaction (group
@@ -407,19 +408,132 @@ Done and on `main`:
   rows only record outcomes, not the method used). `splitsChanged` now
   compares people *and* amounts (`sameShares`). No schema change.
 
+- **Migration 008** applied — `expense_payers` (`expense_id`, `user_id`,
+  `amount_minor_units > 0`; PK (expense_id, user_id); cascade from both
+  FKs; index on `user_id`), a mirror of `expense_splits` for **"paid by
+  multiple people"** (design decision 2026-09-05: table, not a "save as N
+  expenses" client shortcut). **No payer rows = `expenses.user_id` paid it
+  all** (every existing row). With rows: they must sum exactly to
+  `amount_minor_units` and **must include `expenses.user_id`**, which stays
+  the "primary" payer so single-payer readers (lists, stats, SELECT policy)
+  keep working. Grants: REVOKE ALL then `select, insert, delete` to
+  `authenticated` (no UPDATE — replace the set). RLS: SELECT if you can
+  read the expense, INSERT only by `created_by` for a group expense with a
+  payer who is a current member, DELETE by `created_by`. Invariant via two
+  DEFERRABLE INITIALLY DEFERRED constraint triggers —
+  `expense_payers_check_sum` (row changes) and `expenses_check_payers`
+  (UPDATE OF amount_minor_units, group_id, **user_id**; refuses a group
+  change while payer rows exist) — around
+  `private.assert_expense_payers(uuid)`. Client save order becomes: delete
+  splits → delete payers → update expense → insert payers → insert splits.
+  **Ledger rule for several payers (the client must mirror it exactly):**
+  per split expense, each person's net = paid − share; creditors sorted by
+  net desc then user_id, debtors by |net| desc then user_id, each side laid
+  end to end along [0, D); a debtor owes a creditor the overlap of their
+  intervals. Exact integers, deterministic, reduces to the old rule for one
+  payer. `private.has_unsettled_balance` (migration 007) was rewritten on
+  this rule (same signature/grants). Verified live via a rolled-back DO
+  block (14 cases: multi-payer save, guard attribution 300/100 zeroed by
+  matching settlements, sum mismatch, user_id not a payer, outsider payer
+  42501, non-creator write, amount / user_id / group change while payers
+  exist, personal-expense payers, re-record flow, single-payer regression,
+  member/outsider/anon reads, cascades). Types regenerated
+  (`expense_payers` only).
+- **Multi-payer ledger + display** (client reads payer rows; the form
+  still writes none): `packages/shared/src/ledger.ts` holds the
+  attribution so mobile can reuse it — `attributeExpenseDebts(payers,
+  splits)` (net-then-overlap as a two-pointer sweep over creditors sorted
+  net desc / debtors |net| desc, ties by plain `<` on user_id, never
+  `localeCompare`), `expensePayers(expense)` (rows, or `[user_id →
+  amount]` when there are none) and `expenseNetFor(userId, …)` (paid,
+  share, net). Cross-checked against the migration's SQL CTE over VALUES
+  via `db query`: 40 random cases, 128 debts, identical. `groupLedger`
+  (`lib/balances.ts`) now skips un-split expenses and feeds every split
+  one through `attributeExpenseDebts`, so debts, member balances and the
+  leave guard's `myDebts` mirror agree with `has_unsettled_balance`.
+  `EXPENSE_SELECT` embeds `expense_payers(user_id, amount_minor_units)`;
+  `ExpenseListItem.expense_payers` / `ExpensePayer` in `lib/types.ts`.
+  `ExpenseItem` meta says "Paid by Alice, Bob and you" for several payers
+  (largest amount first, viewer last as "you", the primary payer's label
+  from the embedded profile, others from the `GroupOption` members, a
+  missing member = "a former member"); the position line under the
+  amount is now paid − share: "you lent" (green) / "you borrowed" (red) /
+  "even" (paid exactly your share; new label) / "not involved". The
+  timeline and the home list get this for free.
+- **Multi-payer form** (`ExpenseForm`): the "Paid by" select gains a
+  "Several people…" option (only when the group has more than one member)
+  that opens a "Who paid what" member list — checkbox + amount per payer,
+  the previously selected payer pre-ticked — with a live footer ("₹300 of
+  ₹500 paid · ₹200 left", "Tick everyone who paid.") that also blocks the
+  save. Exact-amount parsing/summing is shared with the Amounts split
+  mode (`planExactAmounts`; the split plan's field is now `amounts`, the
+  row comparer `sameAmounts`). Two or more payers write `expense_payers`
+  rows; exactly one resolves to a plain `user_id` with no rows. The
+  primary payer (`expenses.user_id`) is the last single choice if they
+  paid, else the largest payer, ties by id (`primaryPayer`) — balances
+  come from the rows, so the choice is cosmetic. Save order is delete
+  splits → delete payers → update → insert payers → insert splits. Payer
+  rows are rewritten when the amount, group, primary payer or rows
+  change; split rows when the amount, group or shares change; a delete
+  is skipped when the row is known to have none. A `rowsDirty` flag is
+  set once a save has deleted rows, so a retry after a half-failed write
+  rewrites both sets regardless of the stale `expense` prop. Editing an
+  expense with payer rows opens in several mode with its rows; switching
+  group resets to a single payer. Verified live via a rolled-back
+  transaction as the creator (create with 2 payers / 3 splits, edit
+  changing amount + primary payer + rows, back to one payer, and a
+  primary-payer change with rows present correctly refused).
+- **Migration 009** (written, verified, **not yet pushed** — see below) —
+  `groups.simplify_debts boolean not null default false` plus a rewrite of
+  `private.has_unsettled_balance` (same signature/grants/caller) that
+  reads the flag: **pairwise** per counterparty when off (as before),
+  **net position per currency** when on. Both come from the same `mine`
+  CTE (the member's net with each counterparty) over migration 008's
+  unchanged ledger CTE; a missing group row coalesces to pairwise. No new
+  grant or policy: owners flip the flag through the existing table-wide
+  UPDATE grant + owner-only policy. Self-check asserts the column shape,
+  that `authenticated` may update it and `anon` cannot read it, that the
+  function is SECURITY DEFINER, non-executable by API roles and mentions
+  `simplify_debts`. Verified live via a rolled-back `db query` run of the
+  migration + a DO block (7 cases: net-zero-but-pairwise-open member
+  blocked when off / allowed when on, net −100 blocked when on, allowed
+  after settling the simplified debt, sole owner still blocked, all three
+  pairwise debts blocked again after switching off, helper returns
+  true/false across the flip).
+- **Simplify debts** toggle on `/groups/[id]`: `groupLedger(expenses,
+  settlements, { simplify })` (`lib/balances.ts`) still builds the pairwise
+  ledger and the net balances, then, when on, folds every member's net
+  position per currency through `debtsFromNets` — the overlap sweep
+  extracted from `attributeExpenseDebts` in `packages/shared/src/ledger.ts`
+  (same deterministic rule, so a member is in a simplified debt **iff**
+  their net ≠ 0, which is exactly what the guard checks; balances are
+  identical in both modes). Not minimum-transfer in general (NP-hard):
+  in ~1% of random ledgers the sweep yields more rows than the direct
+  view, never more than members − 1. `SimplifyDebtsToggle` (client
+  `role="switch"`, in the Balances section header; disabled read-out for
+  non-owners with a tooltip) updates `groups.simplify_debts` with
+  `.select("id").maybeSingle()` so a policy-filtered update surfaces as
+  "Only an owner can change this", then `router.refresh()`. The section
+  copy switches between "Direct debts … between two people" and
+  "Simplified into fewer payments … you may owe someone you never split
+  with". Settle-up, `DebtItem`, `MemberItem` and the leave blocker
+  (`myDebts.length > 0`) are unchanged and stay consistent with the
+  trigger in both modes. Runtime-checked over 500 random ledgers
+  (balances equal across modes, in-debt ⇔ net ≠ 0, simplified debts sum
+  to each net).
+
 Not yet built (immediate next steps, in rough order):
-1. **"Paid by multiple people"** for one expense — needs a design decision
-   first: the schema has a single payer (`expenses.user_id`), so either a
-   `expense_payers` table (mirror of `expense_splits`, sum = amount, ledger
-   credits each payer) or a client-side "save as N expenses" shortcut.
-2. **Simplify debts** toggle per group on top of `groupLedger` (note:
-   `has_unsettled_balance` is pairwise; a simplified view would need the
-   guard to judge on net position instead, or the UI would show "settled"
-   while the DB still blocks).
-3. **Group activity polish**: expense detail view with every participant's
+0. **Push migration 009 + regenerate types** (blocked in-session: the
+   `db push` was denied, so the web code references `simplify_debts`
+   ahead of the generated types): `pnpm supabase db push --linked`, then
+   `pnpm supabase gen types typescript --linked > packages/shared/src/database.types.ts`
+   (expected diff: `simplify_debts` in `groups` Row/Insert/Update only),
+   then `tsc --noEmit` in apps/web — it passed against a temporary,
+   restored copy of that exact diff.
+1. **Group activity polish**: expense detail view with every participant's
    share; edit a recorded payment (needs an UPDATE policy for either party).
-4. **Invite links** in the members dialog.
-5. PWA config (manifest + service worker), then deploy to Vercel.
+2. **Invite links** in the members dialog.
+3. PWA config (manifest + service worker), then deploy to Vercel.
 
 ## Backlog (future — capture, don't build until scheduled)
 
@@ -434,18 +548,12 @@ Not yet built (immediate next steps, in rough order):
   read/aggregation feature, no schema change needed. Also decide whether
   personal stats should include group expenses the user paid (or their
   split share); today they are excluded.
-- **"Simplify debts"** (net out intermediary debts into fewer payments) as
-  a per-group toggle on top of the pairwise ledger in `lib/balances.ts`
-  (greedy largest-creditor/largest-debtor matching; pure computation, no
-  schema change beyond a `groups.simplify_debts` flag). Settle-up records
-  exist (migration 006).
 - **Deleted profiles vs. splits**: leaving with an open balance is now
   blocked (migration 007), but a profile delete still cascades through
   `group_members` (the guard lets cascades pass) and the participant's
-  split rows, which the sum check then rejects. Decide what happens to a
-  deleted profile's shares. Needed before any account-deletion feature.
-- **"Paid by multiple people"** on one expense (unequal splits are done;
-  see the next-steps list for the schema question).
+  split rows (and, since migration 008, their payer rows), which the sum
+  checks then reject. Decide what happens to a deleted profile's shares.
+  Needed before any account-deletion feature.
 - **Group activity feed** interleaving expenses and payments by date (the
   Splitwise group timeline), and a "Friends"-style cross-group view of
   what you owe each person overall.

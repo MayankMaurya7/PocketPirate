@@ -12,18 +12,27 @@ export type ExpenseSplit = Pick<
   "user_id" | "amount_minor_units"
 >;
 
+/** How much one member paid of a group expense paid by several people. */
+export type ExpensePayer = Pick<
+  Tables<"expense_payers">,
+  "user_id" | "amount_minor_units"
+>;
+
 /**
  * An expense row as the lists render it. `categories` is null when
  * uncategorised — or when another member logged it, since categories are
  * private per user and RLS hides theirs. `groups` is null for personal
  * expenses. `payer` is the profile behind `user_id` (whose expense it is).
  * `expense_splits` is empty for personal and un-split group expenses.
+ * `expense_payers` is empty unless several members paid — then `user_id`
+ * (and `payer`) is the primary payer and appears among the rows.
  */
 export type ExpenseListItem = Tables<"expenses"> & {
   categories: CategoryOption | null;
   groups: Pick<Tables<"groups">, "id" | "name"> | null;
   payer: MemberProfile | null;
   expense_splits: ExpenseSplit[];
+  expense_payers: ExpensePayer[];
 };
 
 /** The lean expense projection the stats page aggregates. */

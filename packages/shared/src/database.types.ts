@@ -77,6 +77,39 @@ export type Database = {
           },
         ]
       }
+      expense_payers: {
+        Row: {
+          amount_minor_units: number
+          expense_id: string
+          user_id: string
+        }
+        Insert: {
+          amount_minor_units: number
+          expense_id: string
+          user_id: string
+        }
+        Update: {
+          amount_minor_units?: number
+          expense_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_payers_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_payers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_splits: {
         Row: {
           amount_minor_units: number

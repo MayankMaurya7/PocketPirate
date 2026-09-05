@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { formatMinorUnits } from "@expense-tracker/shared";
+import {
+  expenseNetFor,
+  expensePayers,
+  formatMinorUnits,
+} from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
@@ -15,6 +19,14 @@ import {
   type GroupOption,
   memberLabel,
 } from "@/lib/types";
+
+/** "A and B" / "A, B and C" — the group's own list style, "you" last. */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 /**
  * One expense row: category dot, description, meta line, amount, and — only
@@ -98,11 +110,33 @@ export function ExpenseItem({
     if (showGroup && expense.groups) {
       meta.push(expense.groups.name);
     }
-    meta.push(
-      expense.user_id === userId
-        ? "Paid by you"
-        : `Paid by ${memberLabel(expense.payer)}`,
-    );
+    const payers = expensePayers(expense);
+    if (payers.length === 1) {
+      meta.push(
+        expense.user_id === userId
+          ? "Paid by you"
+          : `Paid by ${memberLabel(expense.payer)}`,
+      );
+    } else {
+      // Several payers: name them largest share first, the viewer last as
+      // "you". Members who have since left are not in the group option.
+      const members = groups.find((group) => group.id === expense.group_id)?.members;
+      const nameOf = (id: string) =>
+        id === expense.user_id
+          ? memberLabel(expense.payer)
+          : (members?.find((member) => member.user_id === id)?.label ??
+            "a former member");
+      const others = payers
+        .filter((payer) => payer.user_id !== userId)
+        .sort(
+          (a, b) =>
+            b.amount_minor_units - a.amount_minor_units ||
+            (a.user_id < b.user_id ? -1 : 1),
+        )
+        .map((payer) => nameOf(payer.user_id));
+      const includesMe = payers.some((payer) => payer.user_id === userId);
+      meta.push(`Paid by ${joinNames(includesMe ? [...others, "you"] : others)}`);
+    }
 
     const splits = expense.expense_splits;
     if (splits.length === 0) {
@@ -112,19 +146,25 @@ export function ExpenseItem({
     }
   }
 
-  // What this expense did to the viewer's balance: as payer you lent the
-  // others' shares; as a participant you borrowed your share; otherwise it
-  // left you untouched. Mirrors the pairwise ledger on the group page.
-  let position: { label: string; minorUnits: number } | null = null;
+  // What this expense did to the viewer's balance: what you paid minus your
+  // share — lent when positive, borrowed when negative. This is exactly the
+  // total the pairwise ledger on the group page assigns you for it, whoever
+  // the other payers and participants are.
+  let position: { label: "you lent" | "you borrowed" | "even" | "not involved" } & {
+    minorUnits: number;
+  } = { label: "not involved", minorUnits: 0 };
   if (expense.group_id && expense.expense_splits.length > 0) {
-    const myShare =
-      expense.expense_splits.find((split) => split.user_id === userId)
-        ?.amount_minor_units ?? 0;
-    if (expense.user_id === userId) {
-      const lent = expense.amount_minor_units - myShare;
-      position = lent > 0 ? { label: "you lent", minorUnits: lent } : null;
-    } else if (myShare > 0) {
-      position = { label: "you borrowed", minorUnits: myShare };
+    const { paid, share, net } = expenseNetFor(
+      userId,
+      expensePayers(expense),
+      expense.expense_splits,
+    );
+    if (net > 0) {
+      position = { label: "you lent", minorUnits: net };
+    } else if (net < 0) {
+      position = { label: "you borrowed", minorUnits: -net };
+    } else if (paid > 0 || share > 0) {
+      position = { label: "even", minorUnits: 0 };
     }
   }
 
@@ -158,15 +198,15 @@ export function ExpenseItem({
         {expense.group_id && expense.expense_splits.length > 0 && (
           <p
             className={`mt-0.5 text-xs tabular-nums ${
-              position === null
-                ? "text-zinc-400 dark:text-zinc-500"
-                : position.label === "you lent"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400"
+              position.label === "you lent"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : position.label === "you borrowed"
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-zinc-400 dark:text-zinc-500"
             }`}
           >
-            {position === null
-              ? "not involved"
+            {position.minorUnits === 0
+              ? position.label
               : `${position.label} ${formatMinorUnits(position.minorUnits, expense.currency)}`}
           </p>
         )}

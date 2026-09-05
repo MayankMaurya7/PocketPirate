@@ -17,12 +17,7 @@ import {
 } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
-import type {
-  CategoryOption,
-  ExpenseListItem,
-  ExpenseSplit,
-  GroupOption,
-} from "@/lib/types";
+import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
 
 const inputClasses =
   "mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
@@ -30,9 +25,21 @@ const inputClasses =
 const labelClasses =
   "block text-sm font-medium text-zinc-700 dark:text-zinc-300";
 
+/** A member row (checkbox + name + inputs) in the payer and split lists. */
+const memberRowClasses =
+  "flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:has-[:checked]:bg-emerald-950/40";
+
+const amountInputClasses =
+  "w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
+
 /** Group picker sentinels: personal expense, or create a group inline. */
 const PERSONAL = "";
 const NEW_GROUP = "new";
+
+/** "Paid by" picker sentinel: several members paid, amounts entered below. */
+const SEVERAL = "several";
+
+type PayerMode = "one" | "several";
 
 /** How the participants' shares are worked out. */
 type SplitMode = "equal" | "exact" | "shares" | "percent";
@@ -47,13 +54,16 @@ const SPLIT_MODES: { value: SplitMode; label: string }[] = [
 /** Per-member typed values for each of the non-equal modes. */
 type SplitInputs = Record<Exclude<SplitMode, "equal">, Record<string, string>>;
 
+/** A row of either `expense_splits` or `expense_payers`. */
+type AmountRow = { user_id: string; amount_minor_units: number };
+
 /**
- * The shares a mode + inputs produce for the current amount. `shares` is
- * null while the split is incomplete or invalid; `error` says why (and is
- * what blocks the save), `footer` is the live status line under the list.
+ * What a set of inputs produces for the current amount. `amounts` is null
+ * while the entry is incomplete or invalid; `error` says why (and is what
+ * blocks the save), `footer` is the live status line under the list.
  */
-type SplitPlan = {
-  shares: Map<string, number> | null;
+type AmountPlan = {
+  amounts: Map<string, number> | null;
   footer: string;
   error: string | null;
 };
@@ -61,11 +71,11 @@ type SplitPlan = {
 const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-/** Do the saved split rows carry exactly these shares (same people, same amounts)? */
-function sameShares(existing: ExpenseSplit[], shares: Map<string, number>): boolean {
+/** Do the saved rows carry exactly these amounts (same people, same numbers)? */
+function sameAmounts(existing: AmountRow[], amounts: Map<string, number>): boolean {
   return (
-    existing.length === shares.size &&
-    existing.every((split) => shares.get(split.user_id) === split.amount_minor_units)
+    existing.length === amounts.size &&
+    existing.every((row) => amounts.get(row.user_id) === row.amount_minor_units)
   );
 }
 
@@ -80,26 +90,59 @@ function isEqualSplit(expense: ExpenseListItem): boolean {
   return saved.every((value, index) => value === equal[index]);
 }
 
+/**
+ * Parse one typed amount per id and check that they add up to `total`.
+ * Shared by the exact-amount split and the several-payers list; `wording`
+ * fits the status line to each ("assigned" vs "paid").
+ */
+function planExactAmounts(
+  total: number | null,
+  ids: string[],
+  inputs: Record<string, string>,
+  currency: string,
+  wording: { missing: string; verb: string; done: string },
+): AmountPlan {
+  const fmt = (minorUnits: number) => formatMinorUnits(minorUnits, currency);
+  const parsed = ids.map((id) => parseAmountToMinorUnits(inputs[id] ?? "", currency));
+  if (parsed.some((value) => value === null)) {
+    return { amounts: null, footer: wording.missing, error: wording.missing };
+  }
+  const parts = parsed as number[];
+  const sum = parts.reduce((acc, part) => acc + part, 0);
+  if (total === null) {
+    return { amounts: null, footer: `${fmt(sum)} ${wording.verb}.`, error: null };
+  }
+  const diff = total - sum;
+  if (diff !== 0) {
+    const error = `${fmt(sum)} of ${fmt(total)} ${wording.verb} · ${fmt(Math.abs(diff))} ${diff > 0 ? "left" : "over"}.`;
+    return { amounts: null, footer: error, error };
+  }
+  return {
+    amounts: new Map(parts.map((part, index) => [ids[index], part] as const)),
+    footer: wording.done,
+    error: null,
+  };
+}
+
 function planSplit(
   mode: SplitMode,
   amount: number | null,
   participants: string[],
   inputs: SplitInputs,
   currency: string,
-): SplitPlan {
+): AmountPlan {
   const count = participants.length;
   if (count === 0) {
     return {
-      shares: new Map(),
+      amounts: new Map(),
       footer: "Not split — whoever paid bears the whole amount.",
       error: null,
     };
   }
-  const fmt = (minorUnits: number) => formatMinorUnits(minorUnits, currency);
-  const tooSmall = (parts: number[]): SplitPlan | null =>
+  const tooSmall = (parts: number[]): AmountPlan | null =>
     parts.some((part) => part <= 0)
       ? {
-          shares: null,
+          amounts: null,
           footer: `The amount is too small to split ${count} ways like this.`,
           error: `The amount is too small to split ${count} ways like this.`,
         }
@@ -111,36 +154,18 @@ function planSplit(
     case "equal": {
       const footer = `Split equally ${count} way${count === 1 ? "" : "s"}.`;
       if (amount === null) {
-        return { shares: null, footer, error: null };
+        return { amounts: null, footer, error: null };
       }
       const parts = splitEqually(amount, count);
-      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+      return tooSmall(parts) ?? { amounts: toMap(parts), footer, error: null };
     }
 
-    case "exact": {
-      const parsed = participants.map((id) =>
-        parseAmountToMinorUnits(inputs.exact[id] ?? "", currency),
-      );
-      if (parsed.some((value) => value === null)) {
-        const error = "Enter an amount for everyone in the split.";
-        return { shares: null, footer: error, error };
-      }
-      const parts = parsed as number[];
-      const assigned = parts.reduce((sum, part) => sum + part, 0);
-      if (amount === null) {
-        return { shares: null, footer: `${fmt(assigned)} assigned.`, error: null };
-      }
-      const diff = amount - assigned;
-      if (diff !== 0) {
-        const error = `${fmt(assigned)} of ${fmt(amount)} assigned · ${fmt(Math.abs(diff))} ${diff > 0 ? "left" : "over"}.`;
-        return { shares: null, footer: error, error };
-      }
-      return {
-        shares: toMap(parts),
-        footer: `Split by exact amounts, ${count} way${count === 1 ? "" : "s"}.`,
-        error: null,
-      };
-    }
+    case "exact":
+      return planExactAmounts(amount, participants, inputs.exact, currency, {
+        missing: "Enter an amount for everyone in the split.",
+        verb: "assigned",
+        done: `Split by exact amounts, ${count} way${count === 1 ? "" : "s"}.`,
+      });
 
     case "shares": {
       const weights = participants.map((id) => {
@@ -149,15 +174,15 @@ function planSplit(
       });
       if (weights.some((value) => value === null)) {
         const error = "Enter a share count (1 or more) for everyone in the split.";
-        return { shares: null, footer: error, error };
+        return { amounts: null, footer: error, error };
       }
       const total = (weights as number[]).reduce((sum, weight) => sum + weight, 0);
       const footer = `Split by shares · ${plural(total, "share")} in total.`;
       if (amount === null) {
-        return { shares: null, footer, error: null };
+        return { amounts: null, footer, error: null };
       }
       const parts = splitByWeights(amount, weights as number[]);
-      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+      return tooSmall(parts) ?? { amounts: toMap(parts), footer, error: null };
     }
 
     case "percent": {
@@ -166,22 +191,58 @@ function planSplit(
       );
       if (basisPoints.some((value) => value === null)) {
         const error = "Enter a percentage for everyone in the split.";
-        return { shares: null, footer: error, error };
+        return { amounts: null, footer: error, error };
       }
       const total = (basisPoints as number[]).reduce((sum, bp) => sum + bp, 0);
       if (total !== PERCENT_BASIS) {
         const diff = PERCENT_BASIS - total;
         const error = `${basisPointsToInputValue(total)}% of 100% assigned · ${basisPointsToInputValue(Math.abs(diff))}% ${diff > 0 ? "left" : "over"}.`;
-        return { shares: null, footer: error, error };
+        return { amounts: null, footer: error, error };
       }
       const footer = "Split by percentage.";
       if (amount === null) {
-        return { shares: null, footer, error: null };
+        return { amounts: null, footer, error: null };
       }
       const parts = splitByWeights(amount, basisPoints as number[]);
-      return tooSmall(parts) ?? { shares: toMap(parts), footer, error: null };
+      return tooSmall(parts) ?? { amounts: toMap(parts), footer, error: null };
     }
   }
+}
+
+/** Who paid how much, when several members did. Must add up to the amount. */
+function planPayers(
+  amount: number | null,
+  payers: string[],
+  inputs: Record<string, string>,
+  currency: string,
+): AmountPlan {
+  if (payers.length === 0) {
+    const error = "Tick everyone who paid.";
+    return { amounts: null, footer: error, error };
+  }
+  return planExactAmounts(amount, payers, inputs, currency, {
+    missing: "Enter how much each person paid.",
+    verb: "paid",
+    done:
+      payers.length === 1
+        ? "Paid by one person."
+        : `Paid by ${payers.length} people.`,
+  });
+}
+
+/**
+ * Which payer `expenses.user_id` names when several paid: the one picked
+ * before (so an edit keeps it), else whoever paid most, ties by id — the
+ * order the lists name payers in. The database only requires that it is one
+ * of them; balances come from the rows, not from this choice.
+ */
+function primaryPayer(payers: Map<string, number>, preferred: string): string {
+  if (payers.has(preferred)) {
+    return preferred;
+  }
+  return [...payers].sort(
+    ([idA, amountA], [idB, amountB]) => amountB - amountA || (idA < idB ? -1 : 1),
+  )[0][0];
 }
 
 /**
@@ -189,13 +250,18 @@ function planSplit(
  * to create a new one.
  *
  * An expense is personal or belongs to one group. For a group expense the
- * "Paid by" picker sets `user_id` (whose spend it is) to any member, while
- * `created_by` is always the signed-in user — RLS enforces both. "Split
- * between" picks the members who share the cost and how — equally, by exact
- * amounts, by shares or by percentages; their shares are `expense_splits`
- * rows that must sum to the amount (a DB constraint), so the save sequences
- * delete → update → insert to keep that true at every request boundary.
- * Unticking everyone leaves the expense un-split.
+ * "Paid by" picker sets `user_id` (whose spend it is) to any member, or to
+ * "Several people", which lists the members with an amount each; those are
+ * `expense_payers` rows that must sum to the amount and include `user_id`
+ * (the primary payer — see `primaryPayer`). `created_by` is always the
+ * signed-in user — RLS enforces all of it. "Split between" picks the
+ * members who share the cost and how — equally, by exact amounts, by shares
+ * or by percentages; their shares are `expense_splits` rows that must sum
+ * to the amount. Both sums are DB constraints, and the DB also refuses an
+ * amount, group or primary-payer change while rows exist, so the save
+ * sequences delete splits → delete payers → update → insert payers →
+ * insert splits to keep every request boundary valid. Unticking everyone
+ * leaves the expense un-split.
  */
 export function ExpenseForm({
   categories,
@@ -225,7 +291,24 @@ export function ExpenseForm({
   const [description, setDescription] = useState(expense?.description ?? "");
   const [groupChoice, setGroupChoice] = useState(initialGroup);
   const [newGroupName, setNewGroupName] = useState("");
+  // The single payer — and, with several, the preferred primary one.
   const [paidBy, setPaidBy] = useState(expense?.user_id ?? userId);
+  // Several payers: who, and how much each put in. An expense with payer
+  // rows opens in that mode with its rows.
+  const [payerMode, setPayerMode] = useState<PayerMode>(
+    expense && expense.expense_payers.length > 0 ? "several" : "one",
+  );
+  const [payerIds, setPayerIds] = useState<string[]>(() =>
+    (expense?.expense_payers ?? []).map((payer) => payer.user_id),
+  );
+  const [payerInputs, setPayerInputs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (expense?.expense_payers ?? []).map((payer) => [
+        payer.user_id,
+        minorUnitsToInputValue(payer.amount_minor_units, currency),
+      ]),
+    ),
+  );
   // Who shares the cost. New expenses default to everyone in the group.
   const [participants, setParticipants] = useState<string[]>(() =>
     expense
@@ -254,6 +337,10 @@ export function ExpenseForm({
   // Set once a new expense row is written, so a retry after a failed split
   // insert updates that row instead of creating a second expense.
   const [savedExpenseId, setSavedExpenseId] = useState<string | null>(null);
+  // Set once a save has deleted payer or split rows, so that if it then
+  // fails, the retry rewrites both sets whatever the (now stale) `expense`
+  // prop says they were.
+  const [rowsDirty, setRowsDirty] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -264,14 +351,21 @@ export function ExpenseForm({
   const effectivePaidBy = members.some((member) => member.user_id === paidBy)
     ? paidBy
     : userId;
-  // Same for participants — and keep member order, so the split's remainder
-  // lands on the first-listed members deterministically.
+  // Same for payers and participants — and keep member order, so the
+  // split's remainder lands on the first-listed members deterministically.
+  const effectivePayerIds = members
+    .filter((member) => payerIds.includes(member.user_id))
+    .map((member) => member.user_id);
   const effectiveParticipants = members
     .filter((member) => participants.includes(member.user_id))
     .map((member) => member.user_id);
 
-  // Live shares while the form is typed into; also what the save writes.
+  // Live figures while the form is typed into; also what the save writes.
   const amountMinorUnits = parseAmountToMinorUnits(amount, currency);
+  const payerPlan =
+    payerMode === "several"
+      ? planPayers(amountMinorUnits, effectivePayerIds, payerInputs, currency)
+      : null;
   const plan = planSplit(
     splitMode,
     amountMinorUnits,
@@ -283,12 +377,32 @@ export function ExpenseForm({
   function changeGroup(value: string) {
     setGroupChoice(value);
     setPaidBy(userId);
+    setPayerMode("one");
+    setPayerIds([]);
     setParticipants(
       value === NEW_GROUP
         ? [userId]
         : (groups.find((group) => group.id === value)?.members ?? []).map(
             (member) => member.user_id,
           ),
+    );
+  }
+
+  function changePaidBy(value: string) {
+    if (value === SEVERAL) {
+      setPayerMode("several");
+      // Start from whoever was picked, so the common case is ticking one
+      // more person and typing two amounts.
+      setPayerIds((current) => (current.length > 0 ? current : [effectivePaidBy]));
+    } else {
+      setPayerMode("one");
+      setPaidBy(value);
+    }
+  }
+
+  function togglePayer(memberId: string, checked: boolean) {
+    setPayerIds((current) =>
+      checked ? [...current, memberId] : current.filter((id) => id !== memberId),
     );
   }
 
@@ -380,17 +494,39 @@ export function ExpenseForm({
       return;
     }
 
+    // Who paid. Payer rows are only written for several people; one payer
+    // is just `user_id`, as before. Only a group expense can be attributed
+    // to someone else, and a brand-new group has exactly one member.
+    let payer: string;
+    let payerRows: Map<string, number>;
+    if (groupChoice === NEW_GROUP || groupChoice === PERSONAL) {
+      payer = userId;
+      payerRows = new Map();
+    } else if (payerPlan === null) {
+      payer = effectivePaidBy;
+      payerRows = new Map();
+    } else if (payerPlan.amounts === null) {
+      setError(payerPlan.error ?? "Complete who paid before saving.");
+      return;
+    } else if (payerPlan.amounts.size === 1) {
+      payer = [...payerPlan.amounts.keys()][0];
+      payerRows = new Map();
+    } else {
+      payerRows = payerPlan.amounts;
+      payer = primaryPayer(payerRows, paidBy);
+    }
+
     // A brand-new group has exactly one member: the creator, who bears it all.
     let shares: Map<string, number>;
     if (groupChoice === NEW_GROUP) {
       shares = new Map([[userId, amountMinorUnits]]);
     } else if (groupChoice === PERSONAL) {
       shares = new Map();
-    } else if (plan.shares === null) {
+    } else if (plan.amounts === null) {
       setError(plan.error ?? "Complete the split before saving.");
       return;
     } else {
-      shares = plan.shares;
+      shares = plan.amounts;
     }
 
     setPending(true);
@@ -412,9 +548,6 @@ export function ExpenseForm({
       }
     }
 
-    // Only a group expense can be attributed to someone else.
-    const payer = groupId ? effectivePaidBy : userId;
-
     const fields = {
       user_id: payer,
       group_id: groupId,
@@ -425,21 +558,34 @@ export function ExpenseForm({
     };
 
     const existingId = expense?.id ?? savedExpenseId;
-    // Splits must be rewritten when the amount or group changes (the DB
-    // rejects an amount change while splits exist) or the shares change.
-    // A retried save (no `expense`, but `savedExpenseId`) always rewrites.
-    const splitsChanged =
+    // Both row sets must be rewritten when the amount or group changes (the
+    // DB rejects either while rows exist), payers also when the primary
+    // payer changes, and each when its own rows differ. A retried save (no
+    // `expense`, but `savedExpenseId`) or one after a half-done write
+    // (`rowsDirty`) always rewrites both.
+    const rewriteAll =
       !expense ||
+      rowsDirty ||
       expense.amount_minor_units !== amountMinorUnits ||
-      expense.group_id !== groupId ||
-      !sameShares(expense.expense_splits, shares);
+      expense.group_id !== groupId;
+    const payersChanged =
+      rewriteAll ||
+      expense.user_id !== payer ||
+      !sameAmounts(expense.expense_payers, payerRows);
+    const splitsChanged = rewriteAll || !sameAmounts(expense.expense_splits, shares);
+    // Nothing to clear when the row is known to have none (only its creator
+    // writes them, and this form is the creator's).
+    const clearPayers =
+      payersChanged && (!expense || rowsDirty || expense.expense_payers.length > 0);
+    const clearSplits =
+      splitsChanged && (!expense || rowsDirty || expense.expense_splits.length > 0);
 
     let expenseId: string;
 
     if (existingId) {
       expenseId = existingId;
 
-      if (splitsChanged) {
+      if (clearSplits) {
         const { error: clearError } = await supabase
           .from("expense_splits")
           .delete()
@@ -450,6 +596,21 @@ export function ExpenseForm({
           setPending(false);
           return;
         }
+        setRowsDirty(true);
+      }
+
+      if (clearPayers) {
+        const { error: clearError } = await supabase
+          .from("expense_payers")
+          .delete()
+          .eq("expense_id", expenseId);
+
+        if (clearError) {
+          setError(clearError.message);
+          setPending(false);
+          return;
+        }
+        setRowsDirty(true);
       }
 
       const { error: updateError } = await supabase
@@ -463,8 +624,8 @@ export function ExpenseForm({
         return;
       }
     } else {
-      // Id minted client-side so the split rows can reference it without
-      // `.select()` on the insert.
+      // Id minted client-side so the payer and split rows can reference it
+      // without `.select()` on the insert.
       expenseId = crypto.randomUUID();
       const { error: insertError } = await supabase
         .from("expenses")
@@ -490,6 +651,29 @@ export function ExpenseForm({
       setSavedExpenseId(expenseId);
     }
 
+    if (payersChanged && payerRows.size > 0) {
+      const { error: payerError } = await supabase.from("expense_payers").insert(
+        Array.from(payerRows, ([memberId, paid]) => ({
+          expense_id: expenseId,
+          user_id: memberId,
+          amount_minor_units: paid,
+        })),
+      );
+
+      if (payerError) {
+        // The expense itself is saved, paid by the primary payer alone and
+        // not split. Leave the form open so the user can retry; the retry
+        // goes down the update path above and rewrites both row sets.
+        setRowsDirty(true);
+        router.refresh();
+        setError(
+          `${payerError.message} (The expense was saved as paid by one person and without a split — try again.)`,
+        );
+        setPending(false);
+        return;
+      }
+    }
+
     if (splitsChanged && shares.size > 0) {
       const { error: splitError } = await supabase.from("expense_splits").insert(
         Array.from(shares, ([memberId, share]) => ({
@@ -500,8 +684,8 @@ export function ExpenseForm({
       );
 
       if (splitError) {
-        // The expense itself is saved (un-split). Leave the form open so the
-        // user can retry; the retry goes down the update path above.
+        // The expense (and its payers) are saved, un-split. Same retry path.
+        setRowsDirty(true);
         router.refresh();
         setError(
           `${splitError.message} (The expense was saved without a split — try again.)`,
@@ -515,6 +699,9 @@ export function ExpenseForm({
     router.refresh();
     onDone();
   }
+
+  const nameOf = (memberId: string, label: string) =>
+    memberId === userId ? "You" : label;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -621,16 +808,19 @@ export function ExpenseForm({
             </label>
             <select
               id="paid-by"
-              value={effectivePaidBy}
-              onChange={(event) => setPaidBy(event.target.value)}
+              value={payerMode === "several" ? SEVERAL : effectivePaidBy}
+              onChange={(event) => changePaidBy(event.target.value)}
               disabled={pending}
               className={inputClasses}
             >
               {members.map((member) => (
                 <option key={member.user_id} value={member.user_id}>
-                  {member.user_id === userId ? "You" : member.label}
+                  {nameOf(member.user_id, member.label)}
                 </option>
               ))}
+              {members.length > 1 && (
+                <option value={SEVERAL}>Several people…</option>
+              )}
             </select>
           </div>
         )}
@@ -641,6 +831,59 @@ export function ExpenseForm({
           You will be the only member to start with. Add people from the
           group&apos;s page afterwards.
         </p>
+      )}
+
+      {selectedGroup && payerPlan && (
+        <fieldset disabled={pending}>
+          <legend className={labelClasses}>Who paid what</legend>
+          <div className="mt-1.5 grid gap-2">
+            {members.map((member) => {
+              const checked = effectivePayerIds.includes(member.user_id);
+              const name = nameOf(member.user_id, member.label);
+              return (
+                <div key={member.user_id} className={memberRowClasses}>
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) =>
+                        togglePayer(member.user_id, event.target.checked)
+                      }
+                      className="h-4 w-4 accent-emerald-600"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{name}</span>
+                  </label>
+
+                  {checked && (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      aria-label={`${name} — paid`}
+                      value={payerInputs[member.user_id] ?? ""}
+                      onChange={(event) =>
+                        setPayerInputs((current) => ({
+                          ...current,
+                          [member.user_id]: event.target.value,
+                        }))
+                      }
+                      placeholder="0"
+                      className={`${amountInputClasses} shrink-0`}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p
+            className={`mt-1.5 text-xs ${
+              payerPlan.error && amountMinorUnits !== null
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            {payerPlan.footer}
+          </p>
+        </fieldset>
       )}
 
       {selectedGroup && members.length > 0 && (
@@ -680,13 +923,10 @@ export function ExpenseForm({
           >
             {members.map((member) => {
               const checked = effectiveParticipants.includes(member.user_id);
-              const share = plan.shares?.get(member.user_id);
-              const name = member.user_id === userId ? "You" : member.label;
+              const share = plan.amounts?.get(member.user_id);
+              const name = nameOf(member.user_id, member.label);
               return (
-                <div
-                  key={member.user_id}
-                  className="flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:has-[:checked]:bg-emerald-950/40"
-                >
+                <div key={member.user_id} className={memberRowClasses}>
                   <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
                     <input
                       type="checkbox"
@@ -716,7 +956,7 @@ export function ExpenseForm({
                           setSplitInput(splitMode, member.user_id, event.target.value)
                         }
                         placeholder={splitMode === "shares" ? "1" : "0"}
-                        className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                        className={amountInputClasses}
                       />
                       <span className="w-4">
                         {splitMode === "exact"

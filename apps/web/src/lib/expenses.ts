@@ -4,10 +4,11 @@ import { type GroupOption, memberLabel } from "@/lib/types";
 
 /**
  * The embed used by every expense list. `payer` must name the FK explicitly:
- * expenses has two FKs to profiles (user_id and created_by).
+ * expenses has two FKs to profiles (user_id and created_by). `expense_payers`
+ * is empty unless several members paid (then `payer` is the primary one).
  */
 export const EXPENSE_SELECT =
-  "*, categories(id, name, color, icon), groups(id, name), payer:profiles!expenses_user_id_fkey(id, display_name, email, avatar_url), expense_splits(user_id, amount_minor_units)";
+  "*, categories(id, name, color, icon), groups(id, name), payer:profiles!expenses_user_id_fkey(id, display_name, email, avatar_url), expense_splits(user_id, amount_minor_units), expense_payers(user_id, amount_minor_units)";
 
 /** The embed that turns `groups` rows into `GroupOption`s (see below). */
 export const GROUP_OPTION_SELECT =

@@ -20,3 +20,6 @@ export * from "./dates";
 
 /** Spending aggregation (per-period, per-category, per-day/month buckets). */
 export * from "./stats";
+
+/** Who owes whom for one split expense (the rule the database also uses). */
+export * from "./ledger";

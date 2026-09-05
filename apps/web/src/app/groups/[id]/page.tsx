@@ -12,6 +12,7 @@ import { DebtItem } from "@/components/debt-item";
 import { GroupActions, type LeaveBlocker } from "@/components/group-actions";
 import { GroupTimeline } from "@/components/group-timeline";
 import { MembersDialog } from "@/components/members-dialog";
+import { SimplifyDebtsToggle } from "@/components/simplify-debts-toggle";
 import {
   type ExpenseListItem,
   type GroupMember,
@@ -42,13 +43,19 @@ export default async function GroupPage({
 
   // A group the user is not a member of is filtered out by RLS, so "no row"
   // covers both "does not exist" and "not yours" — deliberately the same 404.
-  const { data: group } = await supabase
+  const { data: group, error: groupError } = await supabase
     .from("groups")
     .select(
-      "id, name, created_at, group_members(user_id, role, joined_at, profiles(id, display_name, email, avatar_url))",
+      "id, name, created_at, simplify_debts, group_members(user_id, role, joined_at, profiles(id, display_name, email, avatar_url))",
     )
     .eq("id", id)
     .maybeSingle();
+
+  // A failed query (e.g. a column the database does not have yet) is not
+  // "no such group" — surface it instead of rendering a misleading 404.
+  if (groupError) {
+    throw new Error(`Could not load group: ${groupError.message}`);
+  }
 
   if (!group) {
     notFound();
@@ -96,7 +103,9 @@ export default async function GroupPage({
   const hasLedger =
     settlementList.length > 0 ||
     expenseList.some((expense) => expense.expense_splits.length > 0);
-  const { debts, balances } = groupLedger(expenseList, settlementList);
+  const { debts, balances } = groupLedger(expenseList, settlementList, {
+    simplify: group.simplify_debts,
+  });
   const myDebts = debts.filter(
     (debt) => debt.from === userId || debt.to === userId,
   );
@@ -104,8 +113,10 @@ export default async function GroupPage({
     (debt) => debt.from !== userId && debt.to !== userId,
   );
   // Mirrors the group_members delete trigger: the sole owner cannot leave,
-  // and neither can anyone with an open debt (pairwise, so a net-zero
-  // member with offsetting debts is still blocked).
+  // and neither can anyone with an open debt. The trigger reads the same
+  // simplify_debts flag as the ledger above, so "in no debt here" and "may
+  // leave" agree in both modes (direct: a net-zero member with offsetting
+  // debts is still blocked; simplified: they are not).
   const leaveBlocker: LeaveBlocker | null =
     isOwner && ownerCount === 1
       ? "sole-owner"
@@ -147,12 +158,20 @@ export default async function GroupPage({
 
         {hasLedger && (
           <section className="mt-8">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Balances
-            </h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                Balances
+              </h2>
+              <SimplifyDebtsToggle
+                groupId={group.id}
+                enabled={group.simplify_debts}
+                canEdit={isOwner}
+              />
+            </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              From split expenses and recorded payments. Settle a debt by
-              recording what was paid outside the app.
+              {group.simplify_debts
+                ? "Simplified into fewer payments from everyone's net position, so you may owe someone you never split with. Settle a debt by recording what was paid outside the app."
+                : "Direct debts from split expenses and recorded payments between two people. Settle a debt by recording what was paid outside the app."}
             </p>
 
             <div className="mt-3">

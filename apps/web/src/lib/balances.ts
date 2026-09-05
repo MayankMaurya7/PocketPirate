@@ -1,16 +1,34 @@
+import {
+  type ExpenseMovement,
+  attributeExpenseDebts,
+  debtsFromNets,
+  expensePayers,
+} from "@expense-tracker/shared";
+
 /**
  * Group balances: who owes whom.
  *
  * Two things move money between members:
  * - a split group expense: every participant owes the payer their share
- *   (the payer's own share cancels out);
+ *   (the payer's own share cancels out). When several people paid, the
+ *   shared `attributeExpenseDebts` rule decides which participant owes
+ *   which payer — the database's leave guard applies the same rule;
  * - a recorded settlement: the payer is credited and the payee debited.
  *
  * Debts are kept per unordered pair of members and per currency ("direct"
- * debts, not simplified across the group), so every number on screen can
- * be traced to the expenses and payments between those two people. The
- * per-member net balances are derived from the same pairwise ledger, so
- * per currency they always sum to zero.
+ * debts), so every number on screen can be traced to the expenses and
+ * payments between those two people. The per-member net balances are
+ * derived from the same pairwise ledger, so per currency they always sum to
+ * zero.
+ *
+ * A group can instead opt into **simplified** debts (`groups.simplify_debts`):
+ * the pairwise history is folded into each member's net position and the
+ * members are re-paired from those with `debtsFromNets` — fewer payments,
+ * but a debt may then point at someone you never split with. Net balances
+ * are the same either way. The database's leave guard
+ * (`private.has_unsettled_balance`) reads the same flag and judges
+ * pairwise or on net position to match, so "you appear in no debt here"
+ * and "you may leave" always agree.
  */
 
 /** A member's net position in one currency. Positive = is owed money. */
@@ -28,7 +46,9 @@ export type LedgerExpense = {
   user_id: string;
   currency: string;
   amount_minor_units: number;
-  expense_splits: { user_id: string; amount_minor_units: number }[];
+  expense_splits: ExpenseMovement[];
+  /** Empty when `user_id` paid it all (see `expensePayers`). */
+  expense_payers: ExpenseMovement[];
 };
 
 export type LedgerSettlement = {
@@ -50,9 +70,15 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+export type LedgerOptions = {
+  /** Re-pair members from net positions instead of listing direct debts. */
+  simplify?: boolean;
+};
+
 export function groupLedger(
   expenses: LedgerExpense[],
   settlements: LedgerSettlement[],
+  { simplify = false }: LedgerOptions = {},
 ): GroupLedger {
   // pair key → currency → amount the lexically-first member owes the other
   // (negative when it is the other way round).
@@ -71,8 +97,15 @@ export function groupLedger(
   };
 
   for (const expense of expenses) {
-    for (const split of expense.expense_splits) {
-      owe(split.user_id, expense.user_id, expense.currency, split.amount_minor_units);
+    // Un-split expenses move no money between members.
+    if (expense.expense_splits.length === 0) {
+      continue;
+    }
+    for (const debt of attributeExpenseDebts(
+      expensePayers(expense),
+      expense.expense_splits,
+    )) {
+      owe(debt.from, debt.to, expense.currency, debt.minorUnits);
     }
   }
 
@@ -108,8 +141,6 @@ export function groupLedger(
     }
   }
 
-  debts.sort((a, b) => b.minorUnits - a.minorUnits);
-
   const balances = new Map<string, BalanceEntry[]>();
   for (const [userId, byCurrency] of ledger) {
     const entries = [...byCurrency.entries()]
@@ -120,5 +151,30 @@ export function groupLedger(
     }
   }
 
-  return { debts, balances };
+  if (!simplify) {
+    debts.sort((a, b) => b.minorUnits - a.minorUnits);
+    return { debts, balances };
+  }
+
+  // Simplified view: forget the pairs and re-pair everyone from their net
+  // position, one currency at a time. Anyone at zero (settled, or offsetting
+  // debts) drops out, which is exactly what the leave guard checks.
+  const netsByCurrency = new Map<string, Map<string, number>>();
+  for (const [userId, entries] of balances) {
+    for (const { currency, minorUnits } of entries) {
+      const nets = netsByCurrency.get(currency) ?? new Map<string, number>();
+      nets.set(userId, minorUnits);
+      netsByCurrency.set(currency, nets);
+    }
+  }
+
+  const simplified: Debt[] = [];
+  for (const [currency, nets] of netsByCurrency) {
+    for (const debt of debtsFromNets(nets)) {
+      simplified.push({ ...debt, currency });
+    }
+  }
+  simplified.sort((a, b) => b.minorUnits - a.minorUnits);
+
+  return { debts: simplified, balances };
 }
