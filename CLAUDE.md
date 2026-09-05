@@ -712,11 +712,28 @@ Done and on `main`:
   `ConfirmDialog` for confirmations and the inline `role="alert"` slots
   for errors. `AlertTriangleIcon` added to `icons.tsx`.
 
+- **Deployed to Vercel** (2026-09-06): project `spendwise-web` on the
+  Hobby team, imported from GitHub `MayankMaurya7/spendwise`, root
+  directory `apps/web`, Next.js preset, default build/install (Vercel
+  reads pnpm 9.15.9 from `packageManager` and installs from the workspace
+  root), Node 22. Production host **`https://spendwise-web-dun.vercel.app`**
+  (`spendwise-web.vercel.app` was taken). Env vars
+  `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` set for
+  Production + Preview (same public values as `.env.local`). Every push to
+  `main` deploys production; other branches get preview URLs. Supabase
+  Auth → URL Configuration: Site URL = the production host, redirect
+  allow-list = `http://localhost:3000/**` + `https://spendwise-web-dun.vercel.app/**`.
+  Verified live with curl: `/` → 307 `/login`, `/join/x` → 307
+  `/login?next=…`, `sw.js` (`application/javascript`, `must-revalidate`),
+  `manifest.webmanifest`, `/offline` and icons all 200. Preview deploys
+  use `*.vercel.app` hosts that are **not** on the allow-list, so OAuth
+  from a preview URL falls back to the Site URL — add
+  `https://spendwise-web-*.vercel.app/**` if that ever matters.
+
 Not yet built (immediate next steps, in rough order):
-1. Deploy to Vercel (root directory `apps/web`, env vars
-   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`; then add
-   `https://<host>/**` to Supabase's redirect allow-list and set the Site
-   URL — see the Auth UI and Invite links notes above).
+1. Smoke-test the deployed PWA on a phone (Google sign-in, add expense,
+   install to home screen, offline page), then start on the backlog —
+   custom SMTP first, since the built-in mailer rate-limits signups.
 
 ## Backlog (future — capture, don't build until scheduled)
 
