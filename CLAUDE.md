@@ -137,10 +137,18 @@ Done and on `main`:
   (`src/lib/supabase/server.ts`), session-refresh middleware
   (`src/middleware.ts` + helper). getAll/setAll pattern, verified against
   @supabase/ssr 0.12.5 types.
-- **Auth UI**: combined login/signup page at `/login` (email+password + Google
-  OAuth button + toggle), OAuth/email-confirm callback at `/callback`. Email
-  signup tested working end-to-end (profile + categories seeded on signup,
-  confirmed in dashboard). Google OAuth configured 2026-09-06: Google Cloud
+- **Auth UI**: `/login` is **Google-only** (since 2026-09-09): one
+  "Continue with Google" button, callback-error slot, invite-link `next`
+  handling and "Sign in to join the group…" copy. The email+password form,
+  signup toggle and "check your email" state were removed (git history
+  before 2026-09-09 has them) until custom SMTP exists — with OAuth, sign-in
+  and account creation are the same action, so there is no signup mode.
+  **Consequence**: dashboard-created test users (no Google identity) can no
+  longer sign in through the UI; multi-member testing needs real Google
+  accounts. OAuth callback at `/callback` (still handles `?code=` exchange
+  and `error`/`error_description` bounce-back; email-confirmation links
+  would also land there if the form ever returns). Google OAuth configured
+  2026-09-06: Google Cloud
   project "SpendWise" (OAuth client "SpendWise web", redirect URI
   `https://ymsixpeyipgtetfucnkp.supabase.co/auth/v1/callback`), provider
   enabled in Supabase with "allow without email" OFF, Site URL
@@ -733,10 +741,48 @@ Done and on `main`:
   group, install to home screen (standalone + splash), offline page and
   Retry — all working. **Phase 1 is complete.**
 
-Not yet built (immediate next steps, in rough order):
-1. Custom SMTP for auth emails (see backlog) — the built-in mailer
-   rate-limits signups, so this gates inviting real users.
-2. Account menu contents: theme switch + display-name editor (backlog).
+Not yet built (immediate next steps, agreed 2026-09-09, one per session):
+1. **Migration 012 — group edit permissions.** `groups.edit_policy`
+   (`everyone` | `parties`, default `everyone` for new AND existing
+   groups); UPDATE/DELETE policies on `expenses`, `expense_splits`,
+   `expense_payers`, `settlements` become "current member, and (policy =
+   everyone OR creator/party)". `created_by` on expenses and settlements
+   made immutable by a BEFORE UPDATE trigger (an edit never rewrites
+   "Added by"). Rows whose participants/payers/parties include a former
+   member are frozen (no edit/delete) so the leave guard stays meaningful.
+   A non-creator's edit leaves the creator's category untouched (policy:
+   `category_id` unchanged OR owned by the editor); the form shows it
+   read-only as "Category set by X". `set_simplify_debts(_group_id, _on)`
+   SECURITY DEFINER RPC with a member check replaces the direct update in
+   `SimplifyDebtsToggle` (any member may flip it; the groups UPDATE policy
+   stays owner-only). Owner-only "Who can edit" switch in the group UI.
+2. **Migration 013 — activity trail.** `group_activity` (group, actor,
+   entity kind expense|settlement, entity id, action created|edited|deleted,
+   before/after diff jsonb, title+amount snapshot so deleted rows still
+   read, `created_at`, transaction id so an expense + its split/payer row
+   changes collapse into one entry). Written only by SECURITY DEFINER
+   triggers on the four tables; members SELECT, no client writes. Group
+   entities only (personal expenses have no audience). Timeline gets a
+   collapsed one-line "Bob edited Groceries · 8:50 pm" row type with a
+   chevron expanding to field-level changes; "added" entries are skipped
+   (the expense row already shows that). The edit screen shows the
+   history for its one expense.
+3. **Edit screen.** Tapping a row, its title or the pencil opens a
+   full-height edit view replacing the list (back arrow in the header
+   returns); the details dialog's content ("Paid by", "Split N ways",
+   "Who owes whom") folds in as read-only sections and `ExpenseDetails`
+   goes away. Field order: description, amount, date, then group / paid by
+   / split. Save + Cancel pinned to the bottom with iOS safe-area padding.
+   New expense uses the same layout.
+4. **Navigation lag.** (a) Vercel project Settings → Functions → region
+   `bom1` (Mumbai, next to the DB; Hobby defaults to `iad1` so every RSC
+   render crosses the Atlantic several times) — dashboard change, not
+   code. (b) `loading.tsx` skeletons for `/`, `/groups`, `/groups/[id]`,
+   `/stats`, `/categories` so the shell paints on tap and Next prefetches
+   up to the boundary. (c) Highlight the tapped tab immediately
+   (`useLinkStatus` / transition) so the tap is acknowledged.
+5. Custom SMTP for auth emails (see backlog), then restore email+password
+   sign-in. Account menu contents (theme switch + display-name editor).
 
 ## Backlog (future — capture, don't build until scheduled)
 
@@ -793,8 +839,9 @@ Not yet built (immediate next steps, in rough order):
   Meanwhile: create test users from the dashboard (Authentication → Users →
   Add user, "Auto Confirm User" — no email, signup trigger still seeds
   profile + categories), or temporarily disable "Confirm email" for local
-  dev (re-enable before real users). Also map that error code to a friendly
-  message in `login-form.tsx` (today it shows the raw Supabase text).
+  dev (re-enable before real users). Once SMTP works, **restore the
+  email+password form** in `login-form.tsx` (removed 2026-09-09, Google
+  only for now) and map that error code to a friendly message there.
 - **Rename `middleware.ts` → `proxy.ts`** once Supabase docs adopt the Next 16.2
   convention (currently kept as middleware.ts to stay aligned with Supabase's
   published examples; harmless deprecation warning for now).

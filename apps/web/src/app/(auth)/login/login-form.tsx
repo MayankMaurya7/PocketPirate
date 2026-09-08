@@ -1,103 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { safeRelativePath } from "@/lib/safe-path";
 import { createClient } from "@/lib/supabase/client";
 
-type Mode = "signin" | "signup";
-
+/**
+ * Google is the only way in for now. Email + password sign-in was removed
+ * until custom SMTP is configured (the built-in mailer rate-limits signups);
+ * it lives in git history should it come back. Signing in and creating an
+ * account are the same action with OAuth, so there is no signup toggle.
+ */
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  // The callback route bounces OAuth / confirmation failures back here with
-  // the reason in the query string.
+  // The callback route bounces OAuth failures back here with the reason in
+  // the query string.
   const callbackError = searchParams.get("error");
   // Where to land after signing in — set by pages that need a session, such
   // as an invite link. Relative paths only (never an open redirect).
   const nextPath = safeRelativePath(searchParams.get("next")) ?? "/";
   const joiningGroup = nextPath.startsWith("/join/");
-  // Both OAuth and email confirmation come back through /callback, which
-  // forwards to `next` once the session cookies are set.
-  const callbackUrl = () =>
-    `${window.location.origin}/callback${
-      nextPath === "/" ? "" : `?next=${encodeURIComponent(nextPath)}`
-    }`;
 
-  const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmationSent, setConfirmationSent] = useState(false);
-
-  function switchMode(next: Mode) {
-    setMode(next);
-    setError(null);
-    setConfirmationSent(false);
-    if (callbackError) {
-      router.replace(
-        nextPath === "/"
-          ? "/login"
-          : `/login?next=${encodeURIComponent(nextPath)}`,
-      );
-    }
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError(null);
-
-    const supabase = createClient();
-
-    if (mode === "signin") {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        setError(signInError.message);
-        setPending(false);
-        return;
-      }
-
-      // refresh() re-runs the server components with the new session cookies,
-      // so the destination renders as signed in rather than from a stale cache.
-      router.replace(nextPath);
-      router.refresh();
-      return;
-    }
-
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: callbackUrl(),
-      },
-    });
-
-    if (signUpError) {
-      setError(signUpError.message);
-      setPending(false);
-      return;
-    }
-
-    // With email confirmation on (the Supabase default) signUp returns a user
-    // but no session — the user has to click the link in their inbox first.
-    // If confirmation is ever disabled, a session comes back and we can go
-    // straight to the app.
-    if (data.session) {
-      router.replace(nextPath);
-      router.refresh();
-      return;
-    }
-
-    setConfirmationSent(true);
-    setPending(false);
-  }
 
   async function handleGoogleSignIn() {
     setPending(true);
@@ -107,179 +33,58 @@ export function LoginForm() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: callbackUrl(),
+        // Google comes back through /callback, which sets the session
+        // cookies and forwards to `next`.
+        redirectTo: `${window.location.origin}/callback${
+          nextPath === "/" ? "" : `?next=${encodeURIComponent(nextPath)}`
+        }`,
       },
     });
 
     // On success the browser is navigating away to Google, so we deliberately
-    // leave `pending` set — only an error puts the form back in play.
+    // leave `pending` set — only an error puts the button back in play.
     if (oauthError) {
       setError(oauthError.message);
       setPending(false);
     }
   }
 
-  if (confirmationSent) {
-    return (
-      <div className="text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950">
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.75}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-6 w-6 text-emerald-600 dark:text-emerald-400"
-          >
-            <rect x="2" y="4" width="20" height="16" rx="2" />
-            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-          </svg>
-        </div>
-        <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Check your email
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          We sent a confirmation link to{" "}
-          <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            {email}
-          </span>
-          . Click it to finish creating your account.
-        </p>
-        <button
-          type="button"
-          onClick={() => switchMode("signin")}
-          className="mt-6 text-sm font-medium text-emerald-700 underline-offset-4 hover:underline dark:text-emerald-400"
-        >
-          Back to sign in
-        </button>
-      </div>
-    );
-  }
-
-  const isSignup = mode === "signup";
   const visibleError = error ?? callbackError;
 
   return (
     <div>
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          {isSignup ? "Create your account" : "Welcome back"}
+          Welcome to Spendwise
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           {joiningGroup
-            ? isSignup
-              ? "Create an account to join the group you were invited to."
-              : "Sign in to join the group you were invited to."
-            : isSignup
-              ? "Start tracking where your money goes."
-              : "Sign in to your Spendwise account."}
+            ? "Sign in to join the group you were invited to."
+            : "Track where your money goes, solo or with your flatmates."}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-        <div>
-          <label
-            htmlFor="email"
-            className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-          >
-            Email
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={pending}
-            placeholder="you@example.com"
-            className="mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="password"
-            className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-          >
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete={isSignup ? "new-password" : "current-password"}
-            required
-            minLength={isSignup ? 6 : undefined}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            disabled={pending}
-            placeholder="••••••••"
-            className="mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600"
-          />
-          {isSignup && (
-            <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-500">
-              At least 6 characters.
-            </p>
-          )}
-        </div>
-
-        {visibleError && (
-          <p
-            role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
-          >
-            {visibleError}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-zinc-950"
+      {visibleError && (
+        <p
+          role="alert"
+          className="mt-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
         >
-          {pending && <Spinner />}
-          {pending
-            ? isSignup
-              ? "Creating account…"
-              : "Signing in…"
-            : isSignup
-              ? "Create account"
-              : "Sign in"}
-        </button>
-      </form>
-
-      <div className="my-6 flex items-center gap-3">
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-600">
-          or
-        </span>
-        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-      </div>
+          {visibleError}
+        </p>
+      )}
 
       <button
         type="button"
         onClick={handleGoogleSignIn}
         disabled={pending}
-        className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus:ring-offset-zinc-950"
+        className="mt-8 flex w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus:ring-offset-zinc-950"
       >
-        <GoogleLogo />
-        {isSignup ? "Sign up with Google" : "Sign in with Google"}
+        {pending ? <Spinner /> : <GoogleLogo />}
+        {pending ? "Redirecting to Google…" : "Continue with Google"}
       </button>
 
-      <p className="mt-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-        {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
-        <button
-          type="button"
-          onClick={() => switchMode(isSignup ? "signin" : "signup")}
-          disabled={pending}
-          className="font-medium text-emerald-700 underline-offset-4 hover:underline disabled:opacity-60 dark:text-emerald-400"
-        >
-          {isSignup ? "Sign in" : "Sign up"}
-        </button>
+      <p className="mt-6 text-center text-xs leading-5 text-zinc-500 dark:text-zinc-500">
+        New here? Continuing with Google creates your account.
       </p>
     </div>
   );

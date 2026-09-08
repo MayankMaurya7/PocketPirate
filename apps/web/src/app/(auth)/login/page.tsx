@@ -9,7 +9,7 @@ import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in or create your Spendwise account.",
+  description: "Sign in to Spendwise with your Google account.",
 };
 
 export default async function LoginPage({
@@ -44,14 +44,11 @@ export default async function LoginPage({
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           {/* LoginForm reads searchParams for callback errors, which needs
               a Suspense boundary during prerender. */}
-          <Suspense fallback={<div className="h-[420px]" />}>
+          <Suspense fallback={<div className="h-[196px]" />}>
             <LoginForm />
           </Suspense>
         </div>
 
-        <p className="mt-6 text-center text-xs leading-5 text-zinc-500 dark:text-zinc-500">
-          Track expenses solo or with your flatmates.
-        </p>
       </div>
     </main>
   );
