@@ -3,8 +3,8 @@
 import { LocalTime } from "@/components/added-at";
 import { ChevronDownIcon, HistoryIcon } from "@/components/icons";
 import { activitySubject, describeActivity } from "@/lib/activity";
-import type { MemberNamer } from "@/lib/members";
-import type { ActivityEntry } from "@/lib/types";
+import { groupMemberNamer } from "@/lib/members";
+import type { ActivityEntry, GroupOption } from "@/lib/types";
 
 /**
  * One line of the activity trail — "Bob edited Groceries" or "Bob deleted
@@ -12,16 +12,25 @@ import type { ActivityEntry } from "@/lib/types";
  * (native <details>) to the field-level changes. Creations are not shown
  * here: the expense or payment row itself already says who added it and
  * when. `compact` drops the leading icon for use inside the edit screen.
+ *
+ * People are named from `group`'s current members (the viewer as "you",
+ * anyone who has left as "a former member"). The namer is built here, not
+ * passed in: this is a client component and the timeline that renders it
+ * is a server component, and a function prop cannot cross that boundary
+ * (it crashed every group page whose trail had an entry, 2026-09-09).
  */
 export function ActivityItem({
   entry,
-  nameOf,
+  group,
+  userId,
   compact = false,
 }: {
   entry: ActivityEntry;
-  nameOf: MemberNamer;
+  group: GroupOption | undefined;
+  userId: string;
   compact?: boolean;
 }) {
+  const nameOf = groupMemberNamer(group, userId);
   const actor = entry.actor_id
     ? nameOf(entry.actor_id, { sentence: true })
     : "Someone";

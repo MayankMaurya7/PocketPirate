@@ -819,6 +819,16 @@ Done and on `main`:
   show the snapshot; 'created' entries are skipped) and hands each
   expense its own trail. `lib/members.ts` holds `expenseMemberNamer`
   (moved from the deleted `expense-details.tsx`) + `groupMemberNamer`.
+  **Never pass a function from a server component to a client one**:
+  `GroupTimeline` (server) used to hand `ActivityItem` (client) a `nameOf`
+  namer, which React refuses to serialise ("Functions cannot be passed
+  directly to Client Components"), so the whole group page 500'd in
+  production the moment its trail had an edit or delete entry (seen
+  2026-09-09 on Goa Trip, right after the first edit). `ActivityItem` now
+  takes `group: GroupOption | undefined` + `userId` and builds the namer
+  itself; `ExpenseForm` passes the same. Reproduce this class of bug with
+  a throwaway `app/<route>/page.tsx` fed fixture data against `pnpm dev`
+  — dev mode prints the real message, production only a digest.
 - **Expense screen** (`components/expense-screen.tsx`): tapping an expense
   row, its title or the pencil — and both "Add expense" buttons — opens a
   full-height native `<dialog>` (phones: covers the viewport, back arrow

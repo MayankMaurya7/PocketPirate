@@ -1134,7 +1134,8 @@ export function ExpenseForm({
                 <ActivityItem
                   key={entry.id}
                   entry={entry}
-                  nameOf={groupNamer}
+                  group={selectedGroup ?? undefined}
+                  userId={userId}
                   compact
                 />
               ))}

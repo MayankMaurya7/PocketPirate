@@ -3,7 +3,6 @@ import { formatMonth } from "@expense-tracker/shared";
 import { ActivityItem } from "@/components/activity-item";
 import { ExpenseItem } from "@/components/expense-item";
 import { SettlementItem } from "@/components/settlement-item";
-import { groupMemberNamer } from "@/lib/members";
 import type {
   ActivityEntry,
   CategoryOption,
@@ -43,7 +42,6 @@ export function GroupTimeline({
   labels: MemberLabels;
 }) {
   const group = groups[0];
-  const nameOf = groupMemberNamer(group, userId);
 
   // Each expense's own trail, for its edit screen.
   const trailByExpense = new Map<string, ActivityEntry[]>();
@@ -148,7 +146,8 @@ export function GroupTimeline({
                     <ActivityItem
                       key={`a-${entry.entry.id}`}
                       entry={entry.entry}
-                      nameOf={nameOf}
+                      group={group}
+                      userId={userId}
                     />
                   );
               }
