@@ -76,10 +76,17 @@ export function memberLabel(profile: MemberProfile | null): string {
 /** A member as the expense form's "Paid by" picker needs it. */
 export type GroupMemberOption = { user_id: string; label: string };
 
-/** A group as the expense form / filters need it: name + who is in it. */
+/** Who may edit or delete a group's transactions (see migration 012). */
+export type GroupEditPolicy = Enums<"group_edit_policy">;
+
+/**
+ * A group as the expense form / filters need it: name, who is in it (its
+ * current members) and its edit policy.
+ */
 export type GroupOption = {
   id: string;
   name: string;
+  editPolicy: GroupEditPolicy;
   members: GroupMemberOption[];
 };
 
@@ -100,3 +107,7 @@ export type GroupInvite = Pick<Tables<"group_invites">, "token" | "expires_at"> 
  * absent — callers fall back to a "former member" label.
  */
 export type MemberLabels = Record<string, string>;
+
+/** One entry of a group's activity trail (see migration 013). */
+export type ActivityEntry = Tables<"group_activity">;
+export type ActivityAction = Enums<"activity_action">;

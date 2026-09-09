@@ -10,11 +10,13 @@ import { AddExpenseFab } from "@/components/add-expense-fab";
 import { AppHeader } from "@/components/app-header";
 import { BalanceSummary } from "@/components/balance-summary";
 import { DebtItem } from "@/components/debt-item";
+import { EditPolicyToggle } from "@/components/edit-policy-toggle";
 import { GroupActions, type LeaveBlocker } from "@/components/group-actions";
 import { GroupTimeline } from "@/components/group-timeline";
 import { MembersDialog } from "@/components/members-dialog";
 import { SimplifyDebtsToggle } from "@/components/simplify-debts-toggle";
 import {
+  type ActivityEntry,
   type ExpenseListItem,
   type GroupInvite,
   type GroupMember,
@@ -48,7 +50,7 @@ export default async function GroupPage({
   const { data: group, error: groupError } = await supabase
     .from("groups")
     .select(
-      "id, name, created_at, simplify_debts, group_members(user_id, role, joined_at, profiles(id, display_name, email, avatar_url))",
+      "id, name, created_at, simplify_debts, edit_policy, group_members(user_id, role, joined_at, profiles(id, display_name, email, avatar_url))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -80,6 +82,7 @@ export default async function GroupPage({
     { data: expenses },
     { data: settlements },
     { data: invite },
+    { data: activity },
   ] = await Promise.all([
       supabase.from("categories").select("id, name, color, icon").order("name"),
       supabase
@@ -100,12 +103,19 @@ export default async function GroupPage({
         .select("token, expires_at")
         .eq("group_id", group.id)
         .maybeSingle(),
+      // The trail of edits and deletions (migration 013), newest first.
+      supabase
+        .from("group_activity")
+        .select("*")
+        .eq("group_id", group.id)
+        .order("created_at", { ascending: false }),
     ]);
 
   const categoryList = categories ?? [];
   const groupOption = toGroupOption(group);
   const expenseList: ExpenseListItem[] = expenses ?? [];
   const settlementList: Settlement[] = settlements ?? [];
+  const activityList: ActivityEntry[] = activity ?? [];
   const inviteLink: GroupInvite | null = invite ? toGroupInvite(invite) : null;
   const totals = totalsByCurrency(expenseList);
   const labels: MemberLabels = Object.fromEntries(
@@ -179,7 +189,6 @@ export default async function GroupPage({
               <SimplifyDebtsToggle
                 groupId={group.id}
                 enabled={group.simplify_debts}
-                canEdit={isOwner}
               />
             </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -231,10 +240,19 @@ export default async function GroupPage({
             </Link>
           </div>
 
+          <div className="mt-2">
+            <EditPolicyToggle
+              groupId={group.id}
+              policy={group.edit_policy}
+              isOwner={isOwner}
+            />
+          </div>
+
           <div className="mt-3">
             <GroupTimeline
               expenses={expenseList}
               settlements={settlementList}
+              activity={activityList}
               categories={categoryList}
               groups={[groupOption]}
               userId={userId}

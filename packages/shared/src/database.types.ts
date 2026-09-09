@@ -223,6 +223,57 @@ export type Database = {
           },
         ]
       }
+      group_activity: {
+        Row: {
+          action: Database["public"]["Enums"]["activity_action"]
+          actor_id: string | null
+          changes: Json
+          created_at: string
+          entity_id: string
+          entity_kind: Database["public"]["Enums"]["activity_entity"]
+          group_id: string
+          id: string
+          snapshot: Json
+        }
+        Insert: {
+          action: Database["public"]["Enums"]["activity_action"]
+          actor_id?: string | null
+          changes?: Json
+          created_at?: string
+          entity_id: string
+          entity_kind: Database["public"]["Enums"]["activity_entity"]
+          group_id: string
+          id?: string
+          snapshot?: Json
+        }
+        Update: {
+          action?: Database["public"]["Enums"]["activity_action"]
+          actor_id?: string | null
+          changes?: Json
+          created_at?: string
+          entity_id?: string
+          entity_kind?: Database["public"]["Enums"]["activity_entity"]
+          group_id?: string
+          id?: string
+          snapshot?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_activity_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_activity_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_invites: {
         Row: {
           created_at: string
@@ -305,6 +356,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string
+          edit_policy: Database["public"]["Enums"]["group_edit_policy"]
           id: string
           name: string
           simplify_debts: boolean
@@ -312,6 +364,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by: string
+          edit_policy?: Database["public"]["Enums"]["group_edit_policy"]
           id?: string
           name: string
           simplify_debts?: boolean
@@ -319,6 +372,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string
+          edit_policy?: Database["public"]["Enums"]["group_edit_policy"]
           id?: string
           name?: string
           simplify_debts?: boolean
@@ -449,10 +503,17 @@ export type Database = {
           member_count: number
         }[]
       }
+      set_simplify_debts: {
+        Args: { _enabled: boolean; _group_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
+      activity_action: "created" | "edited" | "deleted"
+      activity_entity: "expense" | "settlement"
       expense_source: "manual" | "voice" | "sms" | "email"
       expense_status: "confirmed" | "pending" | "rejected"
+      group_edit_policy: "everyone" | "parties"
       group_role: "owner" | "member"
     }
     CompositeTypes: {
@@ -584,8 +645,11 @@ export const Constants = {
   },
   public: {
     Enums: {
+      activity_action: ["created", "edited", "deleted"],
+      activity_entity: ["expense", "settlement"],
       expense_source: ["manual", "voice", "sms", "email"],
       expense_status: ["confirmed", "pending", "rejected"],
+      group_edit_policy: ["everyone", "parties"],
       group_role: ["owner", "member"],
     },
   },

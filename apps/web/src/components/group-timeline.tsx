@@ -1,6 +1,11 @@
+import { formatMonth } from "@expense-tracker/shared";
+
+import { ActivityItem } from "@/components/activity-item";
 import { ExpenseItem } from "@/components/expense-item";
 import { SettlementItem } from "@/components/settlement-item";
+import { groupMemberNamer } from "@/lib/members";
 import type {
+  ActivityEntry,
   CategoryOption,
   ExpenseListItem,
   GroupOption,
@@ -10,16 +15,20 @@ import type {
 
 type TimelineEntry =
   | { kind: "expense"; date: string; createdAt: string; expense: ExpenseListItem }
-  | { kind: "settlement"; date: string; createdAt: string; settlement: Settlement };
+  | { kind: "settlement"; date: string; createdAt: string; settlement: Settlement }
+  | { kind: "activity"; date: string; createdAt: string; entry: ActivityEntry };
 
 /**
- * One list of everything that happened in a group — expenses and recorded
- * payments — newest first, grouped by month. Within a day, the entry added
- * most recently comes first.
+ * One list of everything that happened in a group — expenses, recorded
+ * payments and the trail of edits and deletions — newest first, grouped
+ * by month. Expenses and payments sit on their own date; a trail entry on
+ * the day it happened. Within a day, the most recent comes first.
+ * Creations are left out of the trail: the row itself says who added it.
  */
 export function GroupTimeline({
   expenses,
   settlements,
+  activity,
   categories,
   groups,
   userId,
@@ -27,11 +36,25 @@ export function GroupTimeline({
 }: {
   expenses: ExpenseListItem[];
   settlements: Settlement[];
+  activity: ActivityEntry[];
   categories: CategoryOption[];
   groups: GroupOption[];
   userId: string;
   labels: MemberLabels;
 }) {
+  const group = groups[0];
+  const nameOf = groupMemberNamer(group, userId);
+
+  // Each expense's own trail, for its edit screen.
+  const trailByExpense = new Map<string, ActivityEntry[]>();
+  for (const entry of activity) {
+    if (entry.entity_kind === "expense" && entry.action !== "created") {
+      const list = trailByExpense.get(entry.entity_id) ?? [];
+      list.push(entry);
+      trailByExpense.set(entry.entity_id, list);
+    }
+  }
+
   const entries: TimelineEntry[] = [
     ...expenses.map((expense) => ({
       kind: "expense" as const,
@@ -45,6 +68,14 @@ export function GroupTimeline({
       createdAt: settlement.created_at,
       settlement,
     })),
+    ...activity
+      .filter((entry) => entry.action !== "created")
+      .map((entry) => ({
+        kind: "activity" as const,
+        date: entry.created_at.slice(0, 10),
+        createdAt: entry.created_at,
+        entry,
+      })),
   ].sort(
     (a, b) =>
       b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),
@@ -72,10 +103,7 @@ export function GroupTimeline({
     if (!month || month.key !== key) {
       month = {
         key,
-        label: new Date(`${key}-01T00:00:00`).toLocaleDateString(undefined, {
-          month: "long",
-          year: "numeric",
-        }),
+        label: formatMonth(key),
         entries: [],
       };
       months.push(month);
@@ -91,25 +119,40 @@ export function GroupTimeline({
             {month.label}
           </h3>
           <ul className="divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {month.entries.map((entry) =>
-              entry.kind === "expense" ? (
-                <ExpenseItem
-                  key={`e-${entry.expense.id}`}
-                  expense={entry.expense}
-                  categories={categories}
-                  groups={groups}
-                  userId={userId}
-                  showGroup={false}
-                />
-              ) : (
-                <SettlementItem
-                  key={`s-${entry.settlement.id}`}
-                  settlement={entry.settlement}
-                  userId={userId}
-                  labels={labels}
-                />
-              ),
-            )}
+            {month.entries.map((entry) => {
+              switch (entry.kind) {
+                case "expense":
+                  return (
+                    <ExpenseItem
+                      key={`e-${entry.expense.id}`}
+                      expense={entry.expense}
+                      categories={categories}
+                      groups={groups}
+                      userId={userId}
+                      showGroup={false}
+                      activity={trailByExpense.get(entry.expense.id) ?? []}
+                    />
+                  );
+                case "settlement":
+                  return (
+                    <SettlementItem
+                      key={`s-${entry.settlement.id}`}
+                      settlement={entry.settlement}
+                      group={group}
+                      userId={userId}
+                      labels={labels}
+                    />
+                  );
+                case "activity":
+                  return (
+                    <ActivityItem
+                      key={`a-${entry.entry.id}`}
+                      entry={entry.entry}
+                      nameOf={nameOf}
+                    />
+                  );
+              }
+            })}
           </ul>
         </section>
       ))}

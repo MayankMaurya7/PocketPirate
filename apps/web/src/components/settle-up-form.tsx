@@ -28,8 +28,9 @@ const labelClasses =
  * can be changed for a partial or rounded payment. Editing: only the
  * amount, date and note can change (the DB grants UPDATE on just those
  * columns); who paid whom is fixed — delete and re-record to turn a
- * payment around. Either party may do both; RLS checks that the signed-in
- * user is one of the two and that both are still members.
+ * payment around. Who may do either follows the group's edit policy
+ * (migration 012): any member, or only the two parties; never once a
+ * party has left. RLS checks it; `SettlementItem` only offers it then.
  */
 export function SettleUpForm(
   props: {

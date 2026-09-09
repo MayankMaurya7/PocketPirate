@@ -144,3 +144,27 @@ export function previousPeriodRange(
       };
   }
 }
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+/**
+ * "4 Sep 2026" for a YYYY-MM-DD string, without touching the locale.
+ * `toLocaleDateString` differs between the server's Node (en-US: "Sep 4,
+ * 2026") and the browser (en-GB/en-IN: "4 Sept 2026"), which breaks
+ * hydration for any server-rendered row — so dates that reach the HTML
+ * go through this, and only after-hydration times use the locale.
+ */
+export function formatDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const name = MONTHS[(month ?? 1) - 1] ?? "";
+  return `${day} ${name.slice(0, 3)} ${year}`;
+}
+
+/** "September 2026" for a YYYY-MM (or YYYY-MM-DD) string. */
+export function formatMonth(isoMonth: string): string {
+  const [year, month] = isoMonth.split("-").map(Number);
+  return `${MONTHS[(month ?? 1) - 1] ?? ""} ${year}`;
+}

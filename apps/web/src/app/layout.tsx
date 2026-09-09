@@ -33,6 +33,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Let the page extend under the iPhone home indicator / notch so
+  // env(safe-area-inset-*) is non-zero and pinned bars can pad for it.
+  viewportFit: "cover",
   // Browser UI colour follows the app header (see AppHeader): white in light
   // mode, zinc-900 in dark. The manifest's theme_color only shows before the
   // page has loaded.

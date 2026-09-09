@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   DEFAULT_CURRENCY,
   PERCENT_BASIS,
+  attributeExpenseDebts,
   basisPointsToInputValue,
   formatMinorUnits,
   minorUnitsToInputValue,
@@ -17,7 +18,16 @@ import {
 } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
-import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
+import { ActivityItem } from "@/components/activity-item";
+import { LocalTime } from "@/components/added-at";
+import { InfoIcon } from "@/components/icons";
+import { expenseMemberNamer, groupMemberNamer } from "@/lib/members";
+import type {
+  ActivityEntry,
+  CategoryOption,
+  ExpenseListItem,
+  GroupOption,
+} from "@/lib/types";
 
 const inputClasses =
   "mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
@@ -246,8 +256,12 @@ function primaryPayer(payers: Map<string, number>, preferred: string): string {
 }
 
 /**
- * Add/edit form for an expense. Pass `expense` to edit it in place; omit it
- * to create a new one.
+ * Add/edit form for an expense, laid out for `ExpenseScreen`: the fields
+ * scroll between the screen's header and a pinned footer with Save and
+ * Cancel. Pass `expense` to edit it; omit it to create a new one. Pass
+ * `readOnly` (a reason) to show an expense the viewer may not change —
+ * every field disabled, the footer just closes. `activity` is the
+ * expense's own trail (edits and deletions by anyone), shown at the end.
  *
  * An expense is personal or belongs to one group. For a group expense the
  * "Paid by" picker sets `user_id` (whose spend it is) to any member, or to
@@ -269,6 +283,8 @@ export function ExpenseForm({
   userId,
   defaultGroupId,
   expense,
+  readOnly = null,
+  activity = [],
   onDone,
 }: {
   categories: CategoryOption[];
@@ -276,6 +292,8 @@ export function ExpenseForm({
   userId: string;
   defaultGroupId?: string;
   expense?: ExpenseListItem;
+  readOnly?: string | null;
+  activity?: ActivityEntry[];
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -573,8 +591,9 @@ export function ExpenseForm({
       expense.user_id !== payer ||
       !sameAmounts(expense.expense_payers, payerRows);
     const splitsChanged = rewriteAll || !sameAmounts(expense.expense_splits, shares);
-    // Nothing to clear when the row is known to have none (only its creator
-    // writes them, and this form is the creator's).
+    // Nothing to clear when the row is known to have none. (Another member
+    // may have edited since this page loaded; a retry after the resulting
+    // error goes through `rowsDirty` and rewrites both sets.)
     const clearPayers =
       payersChanged && (!expense || rowsDirty || expense.expense_payers.length > 0);
     const clearSplits =
@@ -702,337 +721,459 @@ export function ExpenseForm({
 
   const nameOf = (memberId: string, label: string) =>
     memberId === userId ? "You" : label;
+  const locked = pending || readOnly !== null;
+
+  // Categories are private per user: an expense someone else filed under
+  // one of theirs shows that category as "kept", and stays under it unless
+  // the editor picks one of their own (the database refuses anything else).
+  const foreignCategoryId =
+    expense?.category_id && !categories.some((c) => c.id === expense.category_id)
+      ? expense.category_id
+      : null;
+  const expenseNamer = expense ? expenseMemberNamer(expense, groups, userId) : null;
+
+  // What this expense will do to balances, from the form as it stands —
+  // the same attribution the group's balances use, so the numbers here add
+  // up to what the Balances section will show once it is saved.
+  const previewDebts = (() => {
+    if (!selectedGroup || amountMinorUnits === null || !plan.amounts || plan.amounts.size === 0) {
+      return null;
+    }
+    const payers =
+      payerPlan === null
+        ? [{ user_id: effectivePaidBy, amount_minor_units: amountMinorUnits }]
+        : payerPlan.amounts === null
+          ? null
+          : Array.from(payerPlan.amounts, ([user_id, amount_minor_units]) => ({
+              user_id,
+              amount_minor_units,
+            }));
+    if (!payers) {
+      return null;
+    }
+    const splits = Array.from(plan.amounts, ([user_id, amount_minor_units]) => ({
+      user_id,
+      amount_minor_units,
+    }));
+    return attributeExpenseDebts(payers, splits);
+  })();
+  const groupNamer = groupMemberNamer(selectedGroup ?? undefined, userId);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+      <fieldset disabled={locked} className="space-y-4">
+        {readOnly && (
+          <p className="flex items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+            <span className="mt-0.5 shrink-0 text-zinc-400">
+              <InfoIcon />
+            </span>
+            {readOnly}
+          </p>
+        )}
+
+        {expense && expenseNamer && (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Added by {expenseNamer(expense.created_by)} ·{" "}
+            <LocalTime iso={expense.created_at} />
+          </p>
+        )}
+
         <div>
-          <label htmlFor="amount" className={labelClasses}>
-            Amount ({currency})
+          <label htmlFor="description" className={labelClasses}>
+            Description
           </label>
           <input
-            id="amount"
+            id="description"
             type="text"
-            inputMode="decimal"
-            required
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            disabled={pending}
-            placeholder="0.00"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Groceries, cab fare…"
+            autoFocus={!expense && !readOnly}
             className={inputClasses}
           />
         </div>
 
-        <div>
-          <label htmlFor="expense-date" className={labelClasses}>
-            Date
-          </label>
-          <input
-            id="expense-date"
-            type="date"
-            required
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            disabled={pending}
-            className={inputClasses}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor="category" className={labelClasses}>
-          Category
-        </label>
-        <select
-          id="category"
-          value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
-          disabled={pending}
-          className={inputClasses}
-        >
-          <option value="">No category</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="expense-group" className={labelClasses}>
-            Group
-          </label>
-          <select
-            id="expense-group"
-            value={groupChoice}
-            onChange={(event) => changeGroup(event.target.value)}
-            disabled={pending}
-            className={inputClasses}
-          >
-            <option value={PERSONAL}>Personal</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-            <option value={NEW_GROUP}>+ New group…</option>
-          </select>
-        </div>
-
-        {groupChoice === NEW_GROUP && (
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label htmlFor="new-group-name" className={labelClasses}>
-              Group name
+            <label htmlFor="amount" className={labelClasses}>
+              Amount ({currency})
             </label>
             <input
-              id="new-group-name"
+              id="amount"
               type="text"
+              inputMode="decimal"
               required
-              maxLength={60}
-              autoFocus
-              value={newGroupName}
-              onChange={(event) => setNewGroupName(event.target.value)}
-              disabled={pending}
-              placeholder="Goa trip"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="0.00"
               className={inputClasses}
             />
           </div>
-        )}
 
-        {selectedGroup && (
           <div>
-            <label htmlFor="paid-by" className={labelClasses}>
-              Paid by
+            <label htmlFor="expense-date" className={labelClasses}>
+              Date
+            </label>
+            <input
+              id="expense-date"
+              type="date"
+              required
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              className={inputClasses}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="category" className={labelClasses}>
+            Category
+          </label>
+          <select
+            id="category"
+            value={categoryId}
+            onChange={(event) => setCategoryId(event.target.value)}
+            className={inputClasses}
+          >
+            {foreignCategoryId && (
+              <option value={foreignCategoryId}>
+                Kept as set by {expenseNamer?.(expense!.created_by) ?? "its author"}
+              </option>
+            )}
+            <option value="">No category</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          {foreignCategoryId && (
+            <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Categories are personal, so you can&apos;t see theirs. It stays
+              unless you pick one of yours.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="expense-group" className={labelClasses}>
+              Group
             </label>
             <select
-              id="paid-by"
-              value={payerMode === "several" ? SEVERAL : effectivePaidBy}
-              onChange={(event) => changePaidBy(event.target.value)}
-              disabled={pending}
+              id="expense-group"
+              value={groupChoice}
+              onChange={(event) => changeGroup(event.target.value)}
               className={inputClasses}
             >
-              {members.map((member) => (
-                <option key={member.user_id} value={member.user_id}>
-                  {nameOf(member.user_id, member.label)}
+              <option value={PERSONAL}>Personal</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
                 </option>
               ))}
-              {members.length > 1 && (
-                <option value={SEVERAL}>Several people…</option>
-              )}
+              <option value={NEW_GROUP}>+ New group…</option>
             </select>
           </div>
-        )}
-      </div>
 
-      {groupChoice === NEW_GROUP && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          You will be the only member to start with. Add people from the
-          group&apos;s page afterwards.
-        </p>
-      )}
+          {groupChoice === NEW_GROUP && (
+            <div>
+              <label htmlFor="new-group-name" className={labelClasses}>
+                Group name
+              </label>
+              <input
+                id="new-group-name"
+                type="text"
+                required
+                maxLength={60}
+                autoFocus
+                value={newGroupName}
+                onChange={(event) => setNewGroupName(event.target.value)}
+                placeholder="Goa trip"
+                className={inputClasses}
+              />
+            </div>
+          )}
 
-      {selectedGroup && payerPlan && (
-        <fieldset disabled={pending}>
-          <legend className={labelClasses}>Who paid what</legend>
-          <div className="mt-1.5 grid grid-cols-1 gap-2">
-            {members.map((member) => {
-              const checked = effectivePayerIds.includes(member.user_id);
-              const name = nameOf(member.user_id, member.label);
-              return (
-                <div key={member.user_id} className={memberRowClasses}>
-                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) =>
-                        togglePayer(member.user_id, event.target.checked)
-                      }
-                      className="h-4 w-4 accent-emerald-600"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{name}</span>
-                  </label>
+          {selectedGroup && (
+            <div>
+              <label htmlFor="paid-by" className={labelClasses}>
+                Paid by
+              </label>
+              <select
+                id="paid-by"
+                value={payerMode === "several" ? SEVERAL : effectivePaidBy}
+                onChange={(event) => changePaidBy(event.target.value)}
+                className={inputClasses}
+              >
+                {members.map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {nameOf(member.user_id, member.label)}
+                  </option>
+                ))}
+                {members.length > 1 && (
+                  <option value={SEVERAL}>Several people…</option>
+                )}
+              </select>
+            </div>
+          )}
+        </div>
 
-                  {checked && (
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      aria-label={`${name} — paid`}
-                      value={payerInputs[member.user_id] ?? ""}
-                      onChange={(event) =>
-                        setPayerInputs((current) => ({
-                          ...current,
-                          [member.user_id]: event.target.value,
-                        }))
-                      }
-                      placeholder="0"
-                      className={`${amountInputClasses} shrink-0`}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <p
-            className={`mt-1.5 text-xs ${
-              payerPlan.error && amountMinorUnits !== null
-                ? "text-amber-700 dark:text-amber-400"
-                : "text-zinc-500 dark:text-zinc-400"
-            }`}
-          >
-            {payerPlan.footer}
+        {groupChoice === NEW_GROUP && (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            You will be the only member to start with. Add people from the
+            group&apos;s page afterwards.
           </p>
-        </fieldset>
-      )}
+        )}
 
-      {selectedGroup && members.length > 0 && (
-        <fieldset disabled={pending}>
-          <legend className="sr-only">Split between</legend>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className={labelClasses}>Split between</span>
-            <div
-              role="radiogroup"
-              aria-label="Split method"
-              className="inline-flex rounded-lg border border-zinc-300 bg-zinc-100 p-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800"
-            >
-              {SPLIT_MODES.map((mode) => {
-                const active = mode.value === splitMode;
+        {selectedGroup && payerPlan && (
+          <fieldset>
+            <legend className={labelClasses}>Who paid what</legend>
+            <div className="mt-1.5 grid grid-cols-1 gap-2">
+              {members.map((member) => {
+                const checked = effectivePayerIds.includes(member.user_id);
+                const name = nameOf(member.user_id, member.label);
                 return (
-                  <button
-                    key={mode.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => changeSplitMode(mode.value)}
-                    className={`rounded-md px-2.5 py-1 font-medium transition ${
-                      active
-                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
-                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
+                  <div key={member.user_id} className={memberRowClasses}>
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) =>
+                          togglePayer(member.user_id, event.target.checked)
+                        }
+                        className="h-4 w-4 accent-emerald-600"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{name}</span>
+                    </label>
+
+                    {checked && (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        aria-label={`${name} — paid`}
+                        value={payerInputs[member.user_id] ?? ""}
+                        onChange={(event) =>
+                          setPayerInputs((current) => ({
+                            ...current,
+                            [member.user_id]: event.target.value,
+                          }))
+                        }
+                        placeholder="0"
+                        className={`${amountInputClasses} shrink-0`}
+                      />
+                    )}
+                  </div>
                 );
               })}
             </div>
-          </div>
+            <p
+              className={`mt-1.5 text-xs ${
+                payerPlan.error && amountMinorUnits !== null
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              {payerPlan.footer}
+            </p>
+          </fieldset>
+        )}
 
-          <div
-            className={`mt-1.5 grid grid-cols-1 gap-2 ${splitMode === "equal" ? "sm:grid-cols-2" : ""}`}
-          >
-            {members.map((member) => {
-              const checked = effectiveParticipants.includes(member.user_id);
-              const share = plan.amounts?.get(member.user_id);
-              const name = nameOf(member.user_id, member.label);
-              return (
-                <div key={member.user_id} className={memberRowClasses}>
-                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) =>
-                        toggleParticipant(member.user_id, event.target.checked)
-                      }
-                      className="h-4 w-4 accent-emerald-600"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{name}</span>
-                  </label>
+        {selectedGroup && members.length > 0 && (
+          <fieldset>
+            <legend className="sr-only">Split between</legend>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={labelClasses}>Split between</span>
+              <div
+                role="radiogroup"
+                aria-label="Split method"
+                className="inline-flex rounded-lg border border-zinc-300 bg-zinc-100 p-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+              >
+                {SPLIT_MODES.map((mode) => {
+                  const active = mode.value === splitMode;
+                  return (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => changeSplitMode(mode.value)}
+                      className={`rounded-md px-2.5 py-1 font-medium transition ${
+                        active
+                          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
+                          : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                  {checked && splitMode !== "equal" && (
-                    <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div
+              className={`mt-1.5 grid grid-cols-1 gap-2 ${splitMode === "equal" ? "sm:grid-cols-2" : ""}`}
+            >
+              {members.map((member) => {
+                const checked = effectiveParticipants.includes(member.user_id);
+                const share = plan.amounts?.get(member.user_id);
+                const name = nameOf(member.user_id, member.label);
+                return (
+                  <div key={member.user_id} className={memberRowClasses}>
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
                       <input
-                        type="text"
-                        inputMode={splitMode === "shares" ? "numeric" : "decimal"}
-                        aria-label={`${name} — ${
-                          splitMode === "exact"
-                            ? "amount"
-                            : splitMode === "shares"
-                              ? "shares"
-                              : "percent"
-                        }`}
-                        value={splitInputs[splitMode][member.user_id] ?? ""}
+                        type="checkbox"
+                        checked={checked}
                         onChange={(event) =>
-                          setSplitInput(splitMode, member.user_id, event.target.value)
+                          toggleParticipant(member.user_id, event.target.checked)
                         }
-                        placeholder={splitMode === "shares" ? "1" : "0"}
-                        className={amountInputClasses}
+                        className="h-4 w-4 accent-emerald-600"
                       />
-                      <span className="w-4">
-                        {splitMode === "exact"
-                          ? ""
-                          : splitMode === "shares"
-                            ? "sh"
-                            : "%"}
+                      <span className="min-w-0 flex-1 truncate">{name}</span>
+                    </label>
+
+                    {checked && splitMode !== "equal" && (
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        <input
+                          type="text"
+                          inputMode={splitMode === "shares" ? "numeric" : "decimal"}
+                          aria-label={`${name} — ${
+                            splitMode === "exact"
+                              ? "amount"
+                              : splitMode === "shares"
+                                ? "shares"
+                                : "percent"
+                          }`}
+                          value={splitInputs[splitMode][member.user_id] ?? ""}
+                          onChange={(event) =>
+                            setSplitInput(splitMode, member.user_id, event.target.value)
+                          }
+                          placeholder={splitMode === "shares" ? "1" : "0"}
+                          className={amountInputClasses}
+                        />
+                        <span className="w-4">
+                          {splitMode === "exact"
+                            ? ""
+                            : splitMode === "shares"
+                              ? "sh"
+                              : "%"}
+                        </span>
                       </span>
-                    </span>
-                  )}
+                    )}
 
-                  {checked && splitMode !== "exact" && (
-                    <span className="w-20 shrink-0 text-right text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-                      {share !== undefined ? formatMinorUnits(share, currency) : ""}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <p
-            className={`mt-1.5 text-xs ${
-              plan.error && amountMinorUnits !== null
-                ? "text-amber-700 dark:text-amber-400"
-                : "text-zinc-500 dark:text-zinc-400"
-            }`}
-          >
-            {plan.footer}
-          </p>
-        </fieldset>
-      )}
+                    {checked && splitMode !== "exact" && (
+                      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                        {share !== undefined ? formatMinorUnits(share, currency) : ""}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p
+              className={`mt-1.5 text-xs ${
+                plan.error && amountMinorUnits !== null
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              {plan.footer}
+            </p>
+          </fieldset>
+        )}
 
-      <div>
-        <label htmlFor="description" className={labelClasses}>
-          Description <span className="font-normal text-zinc-400">(optional)</span>
-        </label>
-        <input
-          id="description"
-          type="text"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          disabled={pending}
-          placeholder="Groceries, cab fare…"
-          className={inputClasses}
-        />
+        {selectedGroup && previewDebts && (
+          <section>
+            <h3 className={labelClasses}>Who owes whom for this</h3>
+            {previewDebts.length === 0 ? (
+              <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Nobody — everyone pays exactly their share.
+              </p>
+            ) : (
+              <ul className="mt-1.5 divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                {previewDebts.map((debt) => {
+                  const iOwe = debt.from === userId;
+                  const owedToMe = debt.to === userId;
+                  return (
+                    <li
+                      key={`${debt.from}|${debt.to}`}
+                      className="flex items-center gap-3 px-3 py-2 text-sm"
+                    >
+                      <p className="min-w-0 flex-1 truncate text-zinc-900 dark:text-zinc-100">
+                        <span className="font-medium">
+                          {groupNamer(debt.from, { sentence: true })}
+                        </span>
+                        {iOwe ? " owe " : " owes "}
+                        <span className="font-medium">{groupNamer(debt.to)}</span>
+                      </p>
+                      <p
+                        className={`shrink-0 font-medium tabular-nums ${
+                          iOwe
+                            ? "text-red-600 dark:text-red-400"
+                            : owedToMe
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-zinc-900 dark:text-zinc-100"
+                        }`}
+                      >
+                        {formatMinorUnits(debt.minorUnits, currency)}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {expense && activity.length > 0 && (
+          <section>
+            <h3 className={labelClasses}>History</h3>
+            <ul className="mt-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+              {activity.map((entry) => (
+                <ActivityItem
+                  key={entry.id}
+                  entry={entry}
+                  nameOf={groupNamer}
+                  compact
+                />
+              ))}
+            </ul>
+          </section>
+        )}
+      </fieldset>
       </div>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
-        >
-          {error}
-        </p>
-      )}
-
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-zinc-950"
-        >
-          {pending
-            ? "Saving…"
-            : expense
-              ? "Save changes"
-              : "Add expense"}
-        </button>
-        <button
-          type="button"
-          onClick={onDone}
-          disabled={pending}
-          className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-        >
-          Cancel
-        </button>
+      <div className="shrink-0 border-t border-zinc-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 dark:border-zinc-800 dark:bg-zinc-900 sm:px-5">
+        {error && (
+          <p
+            role="alert"
+            className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+          >
+            {error}
+          </p>
+        )}
+        <div className="flex gap-3">
+          {readOnly === null && (
+            <button
+              type="submit"
+              disabled={pending}
+              className="flex-1 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none dark:focus:ring-offset-zinc-950"
+            >
+              {pending ? "Saving…" : expense ? "Save changes" : "Add expense"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={pending}
+            className={`rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 ${
+              readOnly === null ? "flex-1 sm:flex-none" : "w-full sm:w-auto"
+            }`}
+          >
+            {readOnly === null ? "Cancel" : "Close"}
+          </button>
+        </div>
       </div>
     </form>
   );

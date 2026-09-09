@@ -6,17 +6,24 @@ import { useRouter } from "next/navigation";
 import {
   expenseNetFor,
   expensePayers,
+  formatDate,
   formatMinorUnits,
 } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
-import { ExpenseDetails, expenseMemberNamer } from "@/components/expense-details";
 import { ExpenseForm } from "@/components/expense-form";
+import { ExpenseScreen } from "@/components/expense-screen";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PencilIcon, TrashIcon } from "@/components/icons";
-import { Modal } from "@/components/modal";
-import type { CategoryOption, ExpenseListItem, GroupOption } from "@/lib/types";
+import { expenseMemberNamer } from "@/lib/members";
+import { expenseEditPermission } from "@/lib/permissions";
+import type {
+  ActivityEntry,
+  CategoryOption,
+  ExpenseListItem,
+  GroupOption,
+} from "@/lib/types";
 
 /** "A and B" / "A, B and C" — the group's own list style, "you" last. */
 function joinNames(names: string[]): string {
@@ -27,12 +34,12 @@ function joinNames(names: string[]): string {
 }
 
 /**
- * One expense row: category dot, description, meta line, amount, and — only
- * for expenses this user entered — edit/delete. RLS already limits writes to
- * `created_by`; hiding the buttons just avoids offering an action that would
- * fail. For a group expense the title opens a details dialog with every
- * payer's and participant's amount (personal expenses have nothing beyond
- * the row to show).
+ * One expense row: category dot, description, meta line, amount. Tapping
+ * the row, its title or the pencil opens the expense screen — editable
+ * when RLS would let this member save (`expenseEditPermission` mirrors the
+ * policy), otherwise read-only with the reason. Delete is offered on the
+ * same terms. `activity` is the expense's own trail for the screen's
+ * History section.
  */
 export function ExpenseItem({
   expense,
@@ -40,19 +47,23 @@ export function ExpenseItem({
   groups,
   userId,
   showGroup,
+  activity = [],
 }: {
   expense: ExpenseListItem;
   categories: CategoryOption[];
   groups: GroupOption[];
   userId: string;
   showGroup: boolean;
+  activity?: ActivityEntry[];
 }) {
   const router = useRouter();
-  const [editing, setEditing] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const permission = expenseEditPermission(expense, groups, userId);
+  const canEdit = permission.ok;
 
   async function handleDelete() {
     setPending(true);
@@ -74,20 +85,6 @@ export function ExpenseItem({
     router.refresh();
   }
 
-  if (editing) {
-    return (
-      <li className="p-5">
-        <ExpenseForm
-          categories={categories}
-          groups={groups}
-          userId={userId}
-          expense={expense}
-          onDone={() => setEditing(false)}
-        />
-      </li>
-    );
-  }
-
   const category = expense.categories;
   const enteredByMe = expense.created_by === userId;
   const title = expense.description || category?.name || "Expense";
@@ -101,12 +98,7 @@ export function ExpenseItem({
   } else if (enteredByMe) {
     meta.push("Uncategorised");
   }
-  meta.push(
-    new Date(`${expense.expense_date}T00:00:00`).toLocaleDateString(
-      undefined,
-      { day: "numeric", month: "short", year: "numeric" },
-    ),
-  );
+  meta.push(formatDate(expense.expense_date));
   if (expense.group_id) {
     if (showGroup && expense.groups) {
       meta.push(expense.groups.name);
@@ -159,8 +151,14 @@ export function ExpenseItem({
     }
   }
 
+  const iconButtonClasses =
+    "rounded-md p-1.5 text-zinc-400 transition disabled:opacity-60";
+
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-4">
+    <li
+      onClick={() => setOpen(true)}
+      className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 transition hover:bg-zinc-50 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-4 dark:hover:bg-zinc-800/60"
+    >
       <span
         aria-hidden="true"
         className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -168,20 +166,16 @@ export function ExpenseItem({
       />
 
       <div className="min-w-0 flex-1">
-        {expense.group_id ? (
-          <button
-            type="button"
-            onClick={() => setDetailsOpen(true)}
-            title="Show details"
-            className="block max-w-full truncate text-left text-sm font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
-          >
-            {title}
-          </button>
-        ) : (
-          <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            {title}
-          </p>
-        )}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+          className="block max-w-full truncate text-left text-sm font-medium text-zinc-900 dark:text-zinc-100"
+        >
+          {title}
+        </button>
         <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
           {meta.join(" · ")}
           <AddedAt iso={expense.created_at} date={expense.expense_date} />
@@ -219,23 +213,29 @@ export function ExpenseItem({
         the title keeps its width; from `sm` up they take a fixed-width slot
         in the row so amounts line up across rows with and without actions.
       */}
-      {enteredByMe ? (
+      {canEdit ? (
         <div className="flex w-full justify-end gap-1 sm:w-15 sm:shrink-0">
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpen(true);
+            }}
             disabled={pending}
             aria-label="Edit expense"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            className={`${iconButtonClasses} hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200`}
           >
             <PencilIcon />
           </button>
           <button
             type="button"
-            onClick={() => setConfirmingDelete(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setConfirmingDelete(true);
+            }}
             disabled={pending}
             aria-label="Delete expense"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+            className={`${iconButtonClasses} hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400`}
           >
             <TrashIcon />
           </button>
@@ -244,54 +244,53 @@ export function ExpenseItem({
         <div aria-hidden="true" className="hidden sm:block sm:w-15 sm:shrink-0" />
       )}
 
-      {enteredByMe && (
-        <ConfirmDialog
-          open={confirmingDelete}
-          onCancel={() => setConfirmingDelete(false)}
-          onConfirm={handleDelete}
-          pending={pending}
-          error={error}
-          title="Delete this expense?"
-          description={
-            <>
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                {title}
-              </span>{" "}
-              ({formatMinorUnits(expense.amount_minor_units, expense.currency)})
-              {expense.group_id && expense.expense_splits.length > 0
-                ? ` will be removed and everyone's balances in ${
-                    expense.groups?.name ?? "the group"
-                  } adjusted.`
-                : " will be removed."}{" "}
-              This can&rsquo;t be undone.
-            </>
-          }
-          confirmLabel="Delete expense"
-          pendingLabel="Deleting…"
-        />
-      )}
-
-      {expense.group_id && (
-        <Modal
-          open={detailsOpen}
-          onClose={() => setDetailsOpen(false)}
-          title="Expense details"
+      {/* Dialogs live outside the row's click target. */}
+      <div onClick={(event) => event.stopPropagation()} className="contents">
+        <ExpenseScreen
+          open={open}
+          onClose={() => setOpen(false)}
+          title={canEdit ? "Edit expense" : "Expense"}
         >
-          <ExpenseDetails
-            expense={expense}
+          <ExpenseForm
+            categories={categories}
             groups={groups}
             userId={userId}
-            onEdit={
-              enteredByMe
-                ? () => {
-                    setDetailsOpen(false);
-                    setEditing(true);
-                  }
-                : undefined
-            }
+            expense={expense}
+            readOnly={permission.ok ? null : permission.reason}
+            activity={activity}
+            onDone={() => setOpen(false)}
           />
-        </Modal>
-      )}
+        </ExpenseScreen>
+
+        {canEdit && (
+          <ConfirmDialog
+            open={confirmingDelete}
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={handleDelete}
+            pending={pending}
+            error={error}
+            title="Delete this expense?"
+            description={
+              <>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {title}
+                </span>{" "}
+                ({formatMinorUnits(expense.amount_minor_units, expense.currency)})
+                {expense.group_id && expense.expense_splits.length > 0
+                  ? ` will be removed and everyone's balances in ${
+                      expense.groups?.name ?? "the group"
+                    } adjusted.`
+                  : " will be removed."}{" "}
+                {expense.group_id
+                  ? "The group's activity will record who deleted it."
+                  : "This can’t be undone."}
+              </>
+            }
+            confirmLabel="Delete expense"
+            pendingLabel="Deleting…"
+          />
+        )}
+      </div>
     </li>
   );
 }

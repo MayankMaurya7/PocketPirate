@@ -3,27 +3,31 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { formatMinorUnits } from "@expense-tracker/shared";
+import { formatDate, formatMinorUnits } from "@expense-tracker/shared";
 
 import { createClient } from "@/lib/supabase/client";
 import { AddedAt } from "@/components/added-at";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { BanknoteIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import { SettleUpForm } from "@/components/settle-up-form";
-import type { MemberLabels, Settlement } from "@/lib/types";
+import { settlementEditPermission } from "@/lib/permissions";
+import type { GroupOption, MemberLabels, Settlement } from "@/lib/types";
 
 /**
  * One recorded payment: who paid whom, amount, date, who recorded it.
- * Either party can edit (amount, date, note) or delete it — RLS enforces
- * this; the buttons are only offered to them. Editing also needs the other
- * party to still be a member, so the pencil is hidden once they have left.
+ * Edit (amount, date, note) and delete are offered when RLS would allow
+ * them — any current member when the group lets everyone edit, else a
+ * party; never once either party has left (`settlementEditPermission`
+ * mirrors the policies). Tapping the row opens the edit form inline.
  */
 export function SettlementItem({
   settlement,
+  group,
   userId,
   labels,
 }: {
   settlement: Settlement;
+  group: GroupOption | undefined;
   userId: string;
   labels: MemberLabels;
 }) {
@@ -37,19 +41,10 @@ export function SettlementItem({
     id === userId ? "you" : (labels[id] ?? "a former member");
   const paidBy = settlement.from_user_id === userId ? "You" : nameOf(settlement.from_user_id);
   const paidTo = nameOf(settlement.to_user_id);
-  const isParty =
-    settlement.from_user_id === userId || settlement.to_user_id === userId;
-  const canEdit =
-    isParty &&
-    settlement.from_user_id in labels &&
-    settlement.to_user_id in labels;
+  const canEdit = settlementEditPermission(settlement, group, userId).ok;
 
   const meta: string[] = [
-    new Date(`${settlement.settled_on}T00:00:00`).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }),
+    formatDate(settlement.settled_on),
     `Recorded by ${settlement.created_by === userId ? "you" : nameOf(settlement.created_by)}`,
   ];
   if (settlement.note) {
@@ -92,7 +87,14 @@ export function SettlementItem({
   }
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-4">
+    <li
+      onClick={canEdit ? () => setEditing(true) : undefined}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-4 ${
+        canEdit
+          ? "cursor-pointer transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+          : ""
+      }`}
+    >
       <span
         aria-hidden="true"
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
@@ -125,22 +127,26 @@ export function SettlementItem({
         amounts align: actions wrap under the amount on phones and take a
         fixed-width slot in the row from `sm` up.
       */}
-      {isParty ? (
+      {canEdit ? (
         <div className="flex w-full justify-end gap-1 sm:w-15 sm:shrink-0">
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              disabled={pending}
-              aria-label="Edit payment"
-              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            >
-              <PencilIcon />
-            </button>
-          )}
           <button
             type="button"
-            onClick={() => setConfirmingDelete(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setEditing(true);
+            }}
+            disabled={pending}
+            aria-label="Edit payment"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-60 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <PencilIcon />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setConfirmingDelete(true);
+            }}
             disabled={pending}
             aria-label="Delete payment"
             className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-60 dark:hover:bg-red-950/50 dark:hover:text-red-400"
@@ -152,27 +158,30 @@ export function SettlementItem({
         <div aria-hidden="true" className="hidden sm:block sm:w-15 sm:shrink-0" />
       )}
 
-      {isParty && (
-        <ConfirmDialog
-          open={confirmingDelete}
-          onCancel={() => setConfirmingDelete(false)}
-          onConfirm={handleDelete}
-          pending={pending}
-          error={error}
-          title="Delete this payment?"
-          description={
-            <>
-              The record that{" "}
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                {paidBy} paid {paidTo}{" "}
-                {formatMinorUnits(settlement.amount_minor_units, settlement.currency)}
-              </span>{" "}
-              will be removed and the balance goes back to what it was before.
-            </>
-          }
-          confirmLabel="Delete payment"
-          pendingLabel="Deleting…"
-        />
+      {canEdit && (
+        <div onClick={(event) => event.stopPropagation()} className="contents">
+          <ConfirmDialog
+            open={confirmingDelete}
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={handleDelete}
+            pending={pending}
+            error={error}
+            title="Delete this payment?"
+            description={
+              <>
+                The record that{" "}
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {paidBy} paid {paidTo}{" "}
+                  {formatMinorUnits(settlement.amount_minor_units, settlement.currency)}
+                </span>{" "}
+                will be removed and the balance goes back to what it was
+                before. The group&apos;s activity will record who deleted it.
+              </>
+            }
+            confirmLabel="Delete payment"
+            pendingLabel="Deleting…"
+          />
+        </div>
       )}
     </li>
   );

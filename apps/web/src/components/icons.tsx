@@ -118,3 +118,30 @@ export function AlertTriangleIcon() {
     </svg>
   );
 }
+
+export function ArrowLeftIcon() {
+  return (
+    <svg {...iconProps} className="h-5 w-5">
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon() {
+  return (
+    <svg {...iconProps} className="h-4 w-4 shrink-0 text-zinc-400">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+export function HistoryIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  );
+}

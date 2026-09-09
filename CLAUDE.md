@@ -68,6 +68,15 @@ supabase/           Supabase project — migrations & Edge Functions (later phas
 
 ## Working style (important)
 
+- **Every tap acknowledges itself at once.** Switches and filters flip
+  optimistically (`useOptimistic` + `useTransition`, pulse/`aria-busy`
+  while pending, revert + inline error on failure — see
+  `SimplifyDebtsToggle`, `EditPolicyToggle`, `ExpenseFilters`); buttons
+  disable with a verb label ("Saving…") for the whole request including
+  the refresh; navigation gets a `loading.tsx` skeleton and an instant
+  active tab. A control that looks idle while its request is in flight
+  reads as a bug (feedback 2026-09-09).
+
 - **Build one step at a time.** Implement a single, well-scoped piece, verify it
   builds/typechecks, then stop and summarize. Do NOT chain ahead into multiple
   features in one session. The developer reviews and commits each step himself.
@@ -741,47 +750,117 @@ Done and on `main`:
   group, install to home screen (standalone + splash), offline page and
   Retry — all working. **Phase 1 is complete.**
 
-Not yet built (immediate next steps, agreed 2026-09-09, one per session):
-1. **Migration 012 — group edit permissions.** `groups.edit_policy`
-   (`everyone` | `parties`, default `everyone` for new AND existing
-   groups); UPDATE/DELETE policies on `expenses`, `expense_splits`,
-   `expense_payers`, `settlements` become "current member, and (policy =
-   everyone OR creator/party)". `created_by` on expenses and settlements
-   made immutable by a BEFORE UPDATE trigger (an edit never rewrites
-   "Added by"). Rows whose participants/payers/parties include a former
-   member are frozen (no edit/delete) so the leave guard stays meaningful.
-   A non-creator's edit leaves the creator's category untouched (policy:
-   `category_id` unchanged OR owned by the editor); the form shows it
-   read-only as "Category set by X". `set_simplify_debts(_group_id, _on)`
-   SECURITY DEFINER RPC with a member check replaces the direct update in
-   `SimplifyDebtsToggle` (any member may flip it; the groups UPDATE policy
-   stays owner-only). Owner-only "Who can edit" switch in the group UI.
-2. **Migration 013 — activity trail.** `group_activity` (group, actor,
-   entity kind expense|settlement, entity id, action created|edited|deleted,
-   before/after diff jsonb, title+amount snapshot so deleted rows still
-   read, `created_at`, transaction id so an expense + its split/payer row
-   changes collapse into one entry). Written only by SECURITY DEFINER
-   triggers on the four tables; members SELECT, no client writes. Group
-   entities only (personal expenses have no audience). Timeline gets a
-   collapsed one-line "Bob edited Groceries · 8:50 pm" row type with a
-   chevron expanding to field-level changes; "added" entries are skipped
-   (the expense row already shows that). The edit screen shows the
-   history for its one expense.
-3. **Edit screen.** Tapping a row, its title or the pencil opens a
-   full-height edit view replacing the list (back arrow in the header
-   returns); the details dialog's content ("Paid by", "Split N ways",
-   "Who owes whom") folds in as read-only sections and `ExpenseDetails`
-   goes away. Field order: description, amount, date, then group / paid by
-   / split. Save + Cancel pinned to the bottom with iOS safe-area padding.
-   New expense uses the same layout.
-4. **Navigation lag.** (a) Vercel project Settings → Functions → region
-   `bom1` (Mumbai, next to the DB; Hobby defaults to `iad1` so every RSC
-   render crosses the Atlantic several times) — dashboard change, not
-   code. (b) `loading.tsx` skeletons for `/`, `/groups`, `/groups/[id]`,
-   `/stats`, `/categories` so the shell paints on tap and Next prefetches
-   up to the boundary. (c) Highlight the tapped tab immediately
-   (`useLinkStatus` / transition) so the tap is acknowledged.
-5. Custom SMTP for auth emails (see backlog), then restore email+password
+- **Migration 012 — group edit permissions** applied 2026-09-09
+  (verified first in a rolled-back `db query` run of the migration + a
+  13-case DO block). Enum `group_edit_policy` (`everyone` | `parties`) and
+  `groups.edit_policy` (default `everyone`, existing groups included).
+  Helpers (`private`, SECURITY DEFINER, EXECUTE to `authenticated` since
+  policies run as the caller): `edits_open_to_all(group_id)` and
+  `can_edit_expense(expense_id, user_id)` = current member AND (policy
+  everyone OR creator OR primary payer `user_id`) AND **nobody involved
+  has left** (primary payer, every payer row, every participant).
+  Secondary payers are deliberately not "parties": the client deletes the
+  payer rows before it updates the expense, so a permission that depended
+  on them would vanish mid-save. Policies: `expenses_update_editor` /
+  `expenses_delete_editor` (personal: creator; group: the helper; WITH
+  CHECK keeps the member/payer shape but no longer requires `created_by`
+  to be a member), `expense_splits_*_editor*`, `expense_payers_*_editor*`,
+  `settlements_update_editor_members` / `settlements_delete_editor_members`
+  (member AND (open OR party) AND both parties still members — delete now
+  freezes too; before, a party could delete after the other had left).
+  `expenses_guard_update` BEFORE UPDATE trigger (`guard_expense_update`,
+  SECURITY DEFINER, postgres-owned): **`created_by` is immutable** ("Who
+  added an expense cannot be changed.") and **`category_id` may only
+  change to null or one of the caller's own** ("You can only file an
+  expense under one of your own categories."), so an editor leaves the
+  creator's (invisible) category alone; the category check moved out of
+  the UPDATE policy's WITH CHECK for that reason (exempt when
+  `auth.uid()` is null = postgres/dashboard). `set_simplify_debts(_group_id,
+  _enabled)` SECURITY DEFINER RPC with a member check (EXECUTE to
+  `authenticated` only) replaces the direct update — the groups UPDATE
+  policy stays owner-only, which is how owners flip `edit_policy`.
+- **Migration 013 — activity trail** applied 2026-09-09 (verified first,
+  10 cases). `group_activity` (`group_id` cascade,
+  `actor_id` → profiles set null, `entity_kind` enum `activity_entity`
+  expense|settlement, `entity_id` no FK so the entry outlives the row,
+  `action` enum `activity_action` created|edited|deleted, `changes` jsonb
+  `{field: {from, to}}`, `snapshot` jsonb of the row after (before, for
+  deleted), `created_at` default **`clock_timestamp()`** so ordering is
+  strict inside one transaction). Grants: REVOKE ALL then `select` to
+  `authenticated`; RLS SELECT for members; no client writes. Written by
+  SECURITY DEFINER triggers (all postgres-owned, EXECUTE revoked from API
+  roles) through `private.log_activity(...)`: `expenses_log_activity`
+  (row; group move = deleted in old + created in new; fields amount,
+  currency, date, description, paid_by, category), statement-level
+  `expense_splits_log_inserted/deleted` and `expense_payers_log_inserted/
+  deleted` with transition tables (keys `split` / `payers`, full row sets
+  from → to), `settlements_log_activity` (amount, date, note). **Merge
+  rule**: an 'edited' entry merges into the same actor's 'edited' entry
+  for the same row from the last 2 minutes (from stays, to = latest, a
+  field back at its start is dropped, an emptied entry is deleted) so the
+  client's 5-request save is one line; the split/payer rows written right
+  after 'created' fold into the creation, but a field change that soon is
+  its own edit. Personal expenses are never logged. Group/profile
+  cascades pass (guards check the parent still exists). Types regenerated
+  after the push (a hand-mirrored version written earlier matched the
+  generator byte for byte).
+- **Client for 012/013**: `lib/permissions.ts` `expenseEditPermission` /
+  `settlementEditPermission` mirror the policies and return a user-facing
+  reason; `GroupOption.editPolicy` (from `GROUP_OPTION_SELECT`
+  `edit_policy`). `ExpenseItem` / `SettlementItem` offer edit + delete on
+  those terms (a former-member row shows neither). `SimplifyDebtsToggle`
+  calls the RPC and is enabled for every member; `EditPolicyToggle`
+  ("Anyone can edit", owner-only switch + rule text for everyone) sits
+  under the Activity heading on `/groups/[id]`; both use the shared
+  `components/switch.tsx`. The group page fetches `group_activity` and
+  `GroupTimeline` interleaves `ActivityItem` rows ("Bob edited Groceries ·
+  8:50 pm", native `<details>` collapsed to one quiet line, expanding to a
+  from → to list via `lib/activity.ts` `describeActivity`; deleted rows
+  show the snapshot; 'created' entries are skipped) and hands each
+  expense its own trail. `lib/members.ts` holds `expenseMemberNamer`
+  (moved from the deleted `expense-details.tsx`) + `groupMemberNamer`.
+- **Expense screen** (`components/expense-screen.tsx`): tapping an expense
+  row, its title or the pencil — and both "Add expense" buttons — opens a
+  full-height native `<dialog>` (phones: covers the viewport, back arrow
+  in the header, Escape = back, backdrop does not close; `sm`+: centred
+  panel, max 90dvh). `ExpenseForm` renders a scrolling body + a **pinned
+  footer** (Save / Cancel, `pb-[max(0.75rem,env(safe-area-inset-bottom))]`;
+  `viewport.viewportFit = "cover"` in the root layout makes the inset
+  real on iOS; the FAB got the same bottom offset). Field order:
+  description, amount + date, category, group + paid by, who paid what,
+  split, then read-only **"Who owes whom for this"** computed live from
+  the form (`attributeExpenseDebts` on the current payers/shares — the old
+  details dialog's section) and **History** (the expense's trail). A
+  viewer who may not edit gets the same screen read-only (`readOnly` =
+  the reason, every field disabled, footer = Close). A category the
+  viewer cannot see shows as "Kept as set by <author>" and stays unless
+  they pick one of their own. `ExpenseDetails` and the details `Modal`
+  are gone; `Modal` remains for the members dialog.
+- **Dates in server-rendered HTML are locale-free**: `formatDate`
+  ("4 Sep 2026") and `formatMonth` ("September 2026") in
+  `packages/shared/src/dates.ts` use a fixed English month table. Never
+  call `toLocaleDateString(undefined, …)` in anything that reaches the
+  HTML: Node renders en-US ("Sep 4, 2026"), the browser en-GB/en-IN
+  ("4 Sept 2026"), and every expense row then fails hydration (seen
+  2026-09-09 on `/groups/[id]`). The locale is fine only after hydration
+  (`LocalTime` / `AddedAt`, the mounted-gated stats charts).
+- **Navigation feel**: `loading.tsx` for `/`, `/groups`, `/groups/[id]`,
+  `/categories`, `/stats` (`components/skeleton.tsx`: `PageSkeleton`
+  renders the real `AppHeader` with the destination tab active plus
+  `Bone` / `ListSkeleton` placeholders) so the shell paints on tap and
+  Next prefetches to the boundary. `NavTabs` (client, in `AppHeader`)
+  highlights the tapped tab immediately and dims its label while
+  `useLinkStatus` is pending. **Still to do by hand**: Vercel → Settings →
+  Functions → region `bom1` (Mumbai, beside the DB; Hobby defaults to
+  `iad1`).
+
+Not yet built (immediate next steps):
+1. **Test the 2026-09-09 batch on a phone** (nothing was exercised in a
+   browser by the agent): edit another member's expense, the "Anyone can
+   edit" switch, simplify debts as a non-owner, the activity trail lines,
+   the full-screen editor, tab skeletons. Set the Vercel function region
+   to `bom1` (dashboard).
+2. Custom SMTP for auth emails (see backlog), then restore email+password
    sign-in. Account menu contents (theme switch + display-name editor).
 
 ## Backlog (future — capture, don't build until scheduled)

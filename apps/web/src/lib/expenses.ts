@@ -1,6 +1,6 @@
 import { formatMinorUnits } from "@expense-tracker/shared";
 
-import { type GroupOption, memberLabel } from "@/lib/types";
+import { type GroupEditPolicy, type GroupOption, memberLabel } from "@/lib/types";
 
 /**
  * The embed used by every expense list. `payer` must name the FK explicitly:
@@ -12,11 +12,12 @@ export const EXPENSE_SELECT =
 
 /** The embed that turns `groups` rows into `GroupOption`s (see below). */
 export const GROUP_OPTION_SELECT =
-  "id, name, group_members(user_id, profiles(id, display_name, email, avatar_url))";
+  "id, name, edit_policy, group_members(user_id, profiles(id, display_name, email, avatar_url))";
 
 type GroupOptionRow = {
   id: string;
   name: string;
+  edit_policy: GroupEditPolicy;
   group_members: {
     user_id: string;
     profiles: {
@@ -33,6 +34,7 @@ export function toGroupOption(row: GroupOptionRow): GroupOption {
   return {
     id: row.id,
     name: row.name,
+    editPolicy: row.edit_policy,
     members: row.group_members.map((member) => ({
       user_id: member.user_id,
       label: memberLabel(member.profiles),

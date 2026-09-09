@@ -1,24 +1,19 @@
 import Link from "next/link";
 
 import { AccountMenu } from "@/components/account-menu";
+import { NavTabs } from "@/components/nav-tabs";
 
-type Section = "expenses" | "stats" | "groups" | "categories";
-
-const NAV: { key: Section; href: string; label: string }[] = [
-  { key: "expenses", href: "/", label: "Expenses" },
-  { key: "stats", href: "/stats", label: "Stats" },
-  { key: "groups", href: "/groups", label: "Groups" },
-  { key: "categories", href: "/categories", label: "Categories" },
-];
+export type Section = "expenses" | "stats" | "groups" | "categories";
 
 /**
- * Site header: wordmark, the primary nav as underline tabs, and the account
- * menu (gear icon → email + sign out).
+ * Site header: wordmark, the primary nav as underline tabs (`NavTabs`, a
+ * client component so the tapped tab lights up before the page arrives),
+ * and the account menu (gear icon → email + sign out).
  *
- * On phones the tabs form their own full-width row under the wordmark, each
- * tab an equal share; from `sm` up they sit inline between the wordmark and
- * the gear on one 4rem line. In both cases the active tab's underline meets
- * the header's bottom border.
+ * On phones the tabs form their own full-width row under the wordmark,
+ * each tab an equal share; from `sm` up they sit inline between the
+ * wordmark and the gear on one 4rem line. In both cases the active tab's
+ * underline meets the header's bottom border.
  */
 export function AppHeader({
   email,
@@ -39,28 +34,7 @@ export function AppHeader({
           </span>
         </Link>
 
-        <nav
-          aria-label="Primary"
-          className="order-last -mb-px flex basis-full items-stretch sm:order-none sm:ml-8 sm:basis-auto sm:self-stretch"
-        >
-          {NAV.map((item) => {
-            const active = item.key === current;
-            return (
-              <Link
-                key={item.key}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={`flex flex-1 items-center justify-center whitespace-nowrap border-b-2 px-1 pb-2.5 pt-1 text-sm font-medium transition sm:flex-none sm:px-3 sm:py-0 ${
-                  active
-                    ? "border-emerald-600 text-zinc-900 dark:border-emerald-500 dark:text-zinc-50"
-                    : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-50"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <NavTabs current={current} />
 
         <div className="ml-auto">
           <AccountMenu email={email} />

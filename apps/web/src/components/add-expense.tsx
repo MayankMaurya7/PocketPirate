@@ -3,9 +3,10 @@
 import { useState } from "react";
 
 import { ExpenseForm } from "@/components/expense-form";
+import { ExpenseScreen } from "@/components/expense-screen";
 import type { CategoryOption, GroupOption } from "@/lib/types";
 
-/** "Add expense" button that expands into the add form. */
+/** "Add expense" button that opens the expense screen. */
 export function AddExpense({
   categories,
   groups,
@@ -15,13 +16,13 @@ export function AddExpense({
   categories: CategoryOption[];
   groups: GroupOption[];
   userId: string;
-  /** Pre-select a group (used on that group's page). */
+  /** Pre-select a group (used when the list is filtered to one). */
   defaultGroupId?: string;
 }) {
   const [open, setOpen] = useState(false);
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -29,21 +30,16 @@ export function AddExpense({
       >
         Add expense
       </button>
-    );
-  }
 
-  return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        New expense
-      </h2>
-      <ExpenseForm
-        categories={categories}
-        groups={groups}
-        userId={userId}
-        defaultGroupId={defaultGroupId}
-        onDone={() => setOpen(false)}
-      />
-    </div>
+      <ExpenseScreen open={open} onClose={() => setOpen(false)} title="New expense">
+        <ExpenseForm
+          categories={categories}
+          groups={groups}
+          userId={userId}
+          defaultGroupId={defaultGroupId}
+          onDone={() => setOpen(false)}
+        />
+      </ExpenseScreen>
+    </>
   );
 }
