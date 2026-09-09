@@ -817,7 +817,12 @@ Done and on `main`:
   8:50 pm", native `<details>` collapsed to one quiet line, expanding to a
   from → to list via `lib/activity.ts` `describeActivity`; deleted rows
   show the snapshot; 'created' entries are skipped) and hands each
-  expense its own trail. `lib/members.ts` holds `expenseMemberNamer`
+  expense its own trail. **Trail entries sit with their row, not at the
+  top** (feedback 2026-09-09): the sort key is (row date, row
+  `created_at`, entry `created_at`), so "Bob edited Groceries" sits
+  directly above the Groceries row and a deleted row's entry sits on the
+  date the snapshot remembers (`expense_date` / `settled_on`), falling
+  back to the entry's own day. `lib/members.ts` holds `expenseMemberNamer`
   (moved from the deleted `expense-details.tsx`) + `groupMemberNamer`.
   **Never pass a function from a server component to a client one**:
   `GroupTimeline` (server) used to hand `ActivityItem` (client) a `nameOf`
@@ -840,7 +845,9 @@ Done and on `main`:
   description, amount + date, category, group + paid by, who paid what,
   split, then read-only **"Who owes whom for this"** computed live from
   the form (`attributeExpenseDebts` on the current payers/shares — the old
-  details dialog's section) and **History** (the expense's trail). A
+  details dialog's section; **shown only when several people paid**, since
+  with one payer it would just restate the split card, decision
+  2026-09-09) and **History** (the expense's trail). A
   viewer who may not edit gets the same screen read-only (`readOnly` =
   the reason, every field disabled, footer = Close). A category the
   viewer cannot see shows as "Kept as set by <author>" and stays unless

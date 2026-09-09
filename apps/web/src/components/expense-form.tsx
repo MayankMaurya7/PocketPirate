@@ -734,23 +734,27 @@ export function ExpenseForm({
 
   // What this expense will do to balances, from the form as it stands —
   // the same attribution the group's balances use, so the numbers here add
-  // up to what the Balances section will show once it is saved.
+  // up to what the Balances section will show once it is saved. Only shown
+  // when several people paid: with one payer every other participant simply
+  // owes them the share beside their checkbox, so the list would restate
+  // the split card. With several payers the net-then-overlap attribution
+  // cannot be read off the inputs, and this is the one place to check it
+  // before it lands in the ledger.
   const previewDebts = (() => {
-    if (!selectedGroup || amountMinorUnits === null || !plan.amounts || plan.amounts.size === 0) {
+    if (
+      !selectedGroup ||
+      payerPlan === null ||
+      payerPlan.amounts === null ||
+      amountMinorUnits === null ||
+      !plan.amounts ||
+      plan.amounts.size === 0
+    ) {
       return null;
     }
-    const payers =
-      payerPlan === null
-        ? [{ user_id: effectivePaidBy, amount_minor_units: amountMinorUnits }]
-        : payerPlan.amounts === null
-          ? null
-          : Array.from(payerPlan.amounts, ([user_id, amount_minor_units]) => ({
-              user_id,
-              amount_minor_units,
-            }));
-    if (!payers) {
-      return null;
-    }
+    const payers = Array.from(
+      payerPlan.amounts,
+      ([user_id, amount_minor_units]) => ({ user_id, amount_minor_units }),
+    );
     const splits = Array.from(plan.amounts, ([user_id, amount_minor_units]) => ({
       user_id,
       amount_minor_units,

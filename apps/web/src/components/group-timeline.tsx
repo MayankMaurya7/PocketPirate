@@ -3,6 +3,7 @@ import { formatMonth } from "@expense-tracker/shared";
 import { ActivityItem } from "@/components/activity-item";
 import { ExpenseItem } from "@/components/expense-item";
 import { SettlementItem } from "@/components/settlement-item";
+import { activitySnapshot } from "@/lib/activity";
 import type {
   ActivityEntry,
   CategoryOption,
@@ -12,17 +13,30 @@ import type {
   Settlement,
 } from "@/lib/types";
 
-type TimelineEntry =
-  | { kind: "expense"; date: string; createdAt: string; expense: ExpenseListItem }
-  | { kind: "settlement"; date: string; createdAt: string; settlement: Settlement }
-  | { kind: "activity"; date: string; createdAt: string; entry: ActivityEntry };
+/**
+ * Where a row sits in the list: the expense's or payment's own date, then
+ * when it was added (`anchorAt`), then the moment of the row itself (`at`).
+ * A trail entry borrows the first two from the row it is about, so it lands
+ * directly above that row — newer first — instead of floating to the top of
+ * the list on the day of the edit.
+ */
+type Placement = { date: string; anchorAt: string; at: string };
+
+type TimelineEntry = Placement &
+  (
+    | { kind: "expense"; expense: ExpenseListItem }
+    | { kind: "settlement"; settlement: Settlement }
+    | { kind: "activity"; entry: ActivityEntry }
+  );
 
 /**
  * One list of everything that happened in a group — expenses, recorded
  * payments and the trail of edits and deletions — newest first, grouped
- * by month. Expenses and payments sit on their own date; a trail entry on
- * the day it happened. Within a day, the most recent comes first.
- * Creations are left out of the trail: the row itself says who added it.
+ * by month. Expenses and payments sit on their own date; within a day the
+ * most recently added comes first. An edit or deletion sits with the row
+ * it changed: just above it while the row exists, and on the row's last
+ * known date (from the snapshot) once it has been deleted. Creations are
+ * left out of the trail: the row itself says who added it.
  */
 export function GroupTimeline({
   expenses,
@@ -53,30 +67,60 @@ export function GroupTimeline({
     }
   }
 
+  const expenseById = new Map(expenses.map((expense) => [expense.id, expense]));
+  const settlementById = new Map(
+    settlements.map((settlement) => [settlement.id, settlement]),
+  );
+
+  // A trail entry goes where its row is; a deleted row's entry goes where
+  // the row was, on the date the snapshot remembers.
+  const placeEntry = (entry: ActivityEntry): Placement => {
+    const at = entry.created_at;
+    if (entry.entity_kind === "expense") {
+      const expense = expenseById.get(entry.entity_id);
+      if (expense) {
+        return { date: expense.expense_date, anchorAt: expense.created_at, at };
+      }
+    } else {
+      const settlement = settlementById.get(entry.entity_id);
+      if (settlement) {
+        return { date: settlement.settled_on, anchorAt: settlement.created_at, at };
+      }
+    }
+    const remembered =
+      activitySnapshot(entry)[
+        entry.entity_kind === "expense" ? "expense_date" : "settled_on"
+      ];
+    return {
+      date: typeof remembered === "string" ? remembered : at.slice(0, 10),
+      anchorAt: at,
+      at,
+    };
+  };
+
   const entries: TimelineEntry[] = [
     ...expenses.map((expense) => ({
       kind: "expense" as const,
       date: expense.expense_date,
-      createdAt: expense.created_at,
+      anchorAt: expense.created_at,
+      at: expense.created_at,
       expense,
     })),
     ...settlements.map((settlement) => ({
       kind: "settlement" as const,
       date: settlement.settled_on,
-      createdAt: settlement.created_at,
+      anchorAt: settlement.created_at,
+      at: settlement.created_at,
       settlement,
     })),
     ...activity
       .filter((entry) => entry.action !== "created")
-      .map((entry) => ({
-        kind: "activity" as const,
-        date: entry.created_at.slice(0, 10),
-        createdAt: entry.created_at,
-        entry,
-      })),
+      .map((entry) => ({ kind: "activity" as const, ...placeEntry(entry), entry })),
   ].sort(
     (a, b) =>
-      b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),
+      b.date.localeCompare(a.date) ||
+      b.anchorAt.localeCompare(a.anchorAt) ||
+      b.at.localeCompare(a.at),
   );
 
   if (entries.length === 0) {
