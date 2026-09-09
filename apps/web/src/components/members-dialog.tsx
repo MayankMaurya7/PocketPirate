@@ -3,23 +3,26 @@
 import { useState } from "react";
 
 import { AddMember } from "@/components/add-member";
+import { EditPolicyToggle } from "@/components/edit-policy-toggle";
 import { InviteLink } from "@/components/invite-link";
 import { MemberItem } from "@/components/member-item";
 import { Modal } from "@/components/modal";
 import { UsersIcon } from "@/components/icons";
 import type { BalanceEntry } from "@/lib/balances";
-import type { GroupInvite, GroupMember } from "@/lib/types";
+import type { GroupEditPolicy, GroupInvite, GroupMember } from "@/lib/types";
 
 /**
  * The "N people" chip under the group title, opening a dialog with the
- * member list (net balances, owner-only add/remove). Keeps the page itself
- * to the two things that matter day to day: balances and the timeline.
+ * member list (net balances, owner-only invite/add/remove and the "Anyone
+ * can edit" permission). Keeps the page itself to the two things that
+ * matter day to day: balances and the timeline.
  */
 export function MembersDialog({
   groupId,
   members,
   userId,
   isOwner,
+  editPolicy,
   balances,
   showBalances,
   invite,
@@ -28,6 +31,7 @@ export function MembersDialog({
   members: GroupMember[];
   userId: string;
   isOwner: boolean;
+  editPolicy: GroupEditPolicy;
   balances: Map<string, BalanceEntry[]>;
   showBalances: boolean;
   /** The group's current invite link; only fetched for (and shown to) owners. */
@@ -57,6 +61,7 @@ export function MembersDialog({
           <div className="mb-3 space-y-3">
             <InviteLink groupId={groupId} invite={invite} />
             <AddMember groupId={groupId} />
+            <EditPolicyToggle groupId={groupId} policy={editPolicy} />
           </div>
         )}
 

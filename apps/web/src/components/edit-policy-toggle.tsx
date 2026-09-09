@@ -15,20 +15,19 @@ const COPY: Record<GroupEditPolicy, string> = {
 
 /**
  * The owner's "Anyone can edit" switch (`groups.edit_policy`, migration
- * 012). Owners flip it through the owner-only groups UPDATE policy; every
- * other member sees the current rule as text. The switch and its
- * description change the moment it is tapped and pulse until the update
- * and the page refresh are done; on an error they fall back to the saved
- * value and say why.
+ * 012), shown as a card in the members dialog beside the other owner
+ * tools. Owners flip it through the owner-only groups UPDATE policy; other
+ * members never see it (an expense they may not edit opens read-only with
+ * the reason). The switch and its description change the moment it is
+ * tapped and pulse until the update and the page refresh are done; on an
+ * error they fall back to the saved value and say why.
  */
 export function EditPolicyToggle({
   groupId,
   policy,
-  isOwner,
 }: {
   groupId: string;
   policy: GroupEditPolicy;
-  isOwner: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -61,17 +60,21 @@ export function EditPolicyToggle({
   }
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-      <p
-        className={`min-w-0 flex-1 text-xs text-zinc-500 transition dark:text-zinc-400 ${
-          isPending ? "opacity-60" : ""
-        }`}
-      >
-        {COPY[shown]}
-        {!isOwner && " An owner can change this."}
-      </p>
-      {isOwner && (
-        <div className="flex flex-col items-end">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Editing
+          </p>
+          <p
+            className={`mt-0.5 text-xs text-zinc-500 transition dark:text-zinc-400 ${
+              isPending ? "opacity-60" : ""
+            }`}
+          >
+            {COPY[shown]}
+          </p>
+        </div>
+        <div className="shrink-0">
           <Switch
             id={`edit-policy-${groupId}`}
             label="Anyone can edit"
@@ -79,12 +82,12 @@ export function EditPolicyToggle({
             pending={isPending}
             onToggle={handleToggle}
           />
-          {error && (
-            <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
-              {error}
-            </p>
-          )}
         </div>
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
+          {error}
+        </p>
       )}
     </div>
   );

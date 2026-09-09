@@ -810,9 +810,13 @@ Done and on `main`:
   `edit_policy`). `ExpenseItem` / `SettlementItem` offer edit + delete on
   those terms (a former-member row shows neither). `SimplifyDebtsToggle`
   calls the RPC and is enabled for every member; `EditPolicyToggle`
-  ("Anyone can edit", owner-only switch + rule text for everyone) sits
-  under the Activity heading on `/groups/[id]`; both use the shared
-  `components/switch.tsx`. The group page fetches `group_activity` and
+  ("Anyone can edit" switch with the rule as helper text) is an
+  **owner-only card in the members dialog** under Invite link / Add
+  member (moved there 2026-09-09: the rule text under the Activity
+  heading read as noise, and non-owners no longer see it at all — a
+  read-only expense screen states the reason instead). The Activity
+  header's "Filter" link to `/?group=<id>` was removed the same day.
+  Both switches use the shared `components/switch.tsx`. The group page fetches `group_activity` and
   `GroupTimeline` interleaves `ActivityItem` rows ("Bob edited Groceries ·
   8:50 pm", native `<details>` collapsed to one quiet line, expanding to a
   from → to list via `lib/activity.ts` `describeActivity`; deleted rows

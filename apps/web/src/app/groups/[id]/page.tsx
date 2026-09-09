@@ -10,7 +10,6 @@ import { AddExpenseFab } from "@/components/add-expense-fab";
 import { AppHeader } from "@/components/app-header";
 import { BalanceSummary } from "@/components/balance-summary";
 import { DebtItem } from "@/components/debt-item";
-import { EditPolicyToggle } from "@/components/edit-policy-toggle";
 import { GroupActions, type LeaveBlocker } from "@/components/group-actions";
 import { GroupTimeline } from "@/components/group-timeline";
 import { MembersDialog } from "@/components/members-dialog";
@@ -174,6 +173,7 @@ export default async function GroupPage({
             members={members}
             userId={userId}
             isOwner={isOwner}
+            editPolicy={group.edit_policy}
             balances={balances}
             showBalances={hasLedger}
             invite={inviteLink}
@@ -222,31 +222,15 @@ export default async function GroupPage({
         )}
 
         <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Activity
-              {expenseList.length > 0 && (
-                <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
-                  {expenseList.length} expense{expenseList.length === 1 ? "" : "s"} ·{" "}
-                  <span className="tabular-nums">{totals.join(" + ")}</span>
-                </span>
-              )}
-            </h2>
-            <Link
-              href={`/?group=${group.id}`}
-              className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              Filter
-            </Link>
-          </div>
-
-          <div className="mt-2">
-            <EditPolicyToggle
-              groupId={group.id}
-              policy={group.edit_policy}
-              isOwner={isOwner}
-            />
-          </div>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Activity
+            {expenseList.length > 0 && (
+              <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">
+                {expenseList.length} expense{expenseList.length === 1 ? "" : "s"} ·{" "}
+                <span className="tabular-nums">{totals.join(" + ")}</span>
+              </span>
+            )}
+          </h2>
 
           <div className="mt-3">
             <GroupTimeline
