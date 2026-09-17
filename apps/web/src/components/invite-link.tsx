@@ -107,7 +107,7 @@ export function InviteLink({
           </p>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
             Anyone with the link can join after signing in or creating a
-            Spendwise account.
+            PocketPirate account.
           </p>
         </div>
         {!token && (

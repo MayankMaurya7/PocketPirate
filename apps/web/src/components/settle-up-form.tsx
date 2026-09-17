@@ -221,7 +221,7 @@ export function SettleUpForm(
         <span className="mt-px shrink-0 text-emerald-600 dark:text-emerald-400">
           <InfoIcon />
         </span>
-        This records a payment made outside Spendwise. No money is moved.
+        This records a payment made outside PocketPirate. No money is moved.
       </p>
 
       {error && (

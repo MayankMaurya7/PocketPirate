@@ -349,7 +349,7 @@ Done and on `main`:
   Splitwise's record-payment screen): direction fixed by the debt, amount
   prefilled with the debt but editable (live hint for partial payments or
   overpaying, which flips the debt), date, optional note, "recorded outside
-  Spendwise, no money is moved" notice. A party who has left the group is
+  PocketPirate, no money is moved" notice. A party who has left the group is
   labelled "a former member" and gets no settle button (RLS needs both to
   be members). `ExpenseItem` now shows **"you lent ₹x" / "you borrowed
   ₹x" / "not involved"** under the amount for split group expenses.
@@ -672,16 +672,16 @@ Done and on `main`:
 
 - **PWA config**: `app/manifest.ts` (Next file convention → served at
   `/manifest.webmanifest`, link tag auto-injected): name/short_name
-  "Spendwise", `start_url`/`scope`/`id` = `/`, `display: standalone`,
+  "PocketPirate" (was "Spendwise" until 2026-09-18), `start_url`/`scope`/`id` = `/`, `display: standalone`,
   `theme_color` brand emerald `#059669` (splash + title bar before load),
-  `background_color` `#fafafa`. Icons: white bold "S" on emerald —
+  `background_color` `#fafafa`. Icons: white bold "P" on emerald —
   `public/icons/icon-192.png`, `icon-512.png` (rounded corners, purpose
   any) and `icon-maskable-512.png` (full-bleed); `app/icon.svg` (favicon)
   and `app/apple-icon.png` (180, full-bleed, iOS masks it) are picked up
   by Next's icon conventions. Rasterised once with macOS `qlmanage` from
   an SVG (no rsvg/ImageMagick on the machine); regenerate the same way if
   the mark changes. Root layout `metadata`: `applicationName`, title
-  template `%s · Spendwise` (login/join page titles are now the bare
+  template `%s · PocketPirate` (login/join page titles are now the bare
   segment), `appleWebApp` (Next 16 emits the standard
   `mobile-web-app-capable` meta, not the `apple-` one); `viewport.themeColor`
   follows the header per colour scheme (`#ffffff` / `#18181b`). The
@@ -875,6 +875,24 @@ Done and on `main`:
   Functions → region `bom1` (Mumbai, beside the DB; Hobby defaults to
   `iad1`).
 
+- **Renamed to PocketPirate** in code (2026-09-18; was "Spendwise"; the
+  name research is in git history of this file, commit "docs: rename
+  decision is PocketPirate"). Every user-facing string, `applicationName`,
+  title template, manifest name/short_name and the three inline letter
+  badges (`AppHeader`, login, offline) now say PocketPirate / "P"; the
+  icon mark is a white "P" on the same emerald (`app/icon.svg`,
+  `app/apple-icon.png`, `public/icons/*` regenerated with `qlmanage`).
+  `sw.js` cache names are `pocketpirate-*`; its activate cleanup deletes
+  both `pocketpirate-*` and the old `spendwise-*` caches so existing
+  installs don't keep a stale pair (VERSION stays `v1` — the prefix
+  change already makes the names new). Left alone on purpose: the
+  comment on line 1 of migration 001 (applied history), the GitHub repo
+  `MayankMaurya7/spendwise`, the Vercel project `spendwise-web` and the
+  Google Cloud project "SpendWise" (dashboard renames, see item 3
+  below). Branding is placeholder-level: the "P" mark and the
+  "Track expenses solo or with your flatmates" description are unchanged
+  in tone; a real pirate mark and colour decision are open.
+
 Not yet built (immediate next steps):
 1. **Test the 2026-09-09 batch on a phone** (nothing was exercised in a
    browser by the agent): edit another member's expense, the "Anyone can
@@ -883,6 +901,27 @@ Not yet built (immediate next steps):
    to `bom1` (dashboard).
 2. Custom SMTP for auth emails (see backlog), then restore email+password
    sign-in. Account menu contents (theme switch + display-name editor).
+3. **Wire pocketpirate.com** (bought 2026-09-18 on Cloudflare Registrar,
+   2-year term to 2028-09-18, auto-renew on; DNS not configured). Plan
+   (decision 2026-09-18: keep Vercel for hosting, Cloudflare = registrar
+   + DNS only, proxy OFF / grey cloud — no Cloudflare proxy in front of
+   Vercel, no move to Workers): (a) Vercel project → Settings → Domains →
+   add `pocketpirate.com` + `www.pocketpirate.com`, apex primary (www
+   redirects), copy the records Vercel shows into Cloudflare DNS with
+   proxy off, wait for the cert; (b) Supabase Auth → URL Configuration:
+   Site URL `https://pocketpirate.com`, add `https://pocketpirate.com/**`
+   to the allow-list (keep the vercel.app entry as fallback); (c) Google
+   Cloud OAuth consent screen: app name PocketPirate, authorised domain
+   `pocketpirate.com`, homepage/privacy links (the client's redirect URI
+   is Supabase's and does not change; the project is still named
+   "SpendWise"); (d) Cloudflare Email Routing: hello@ / support@ →
+   Gmail (the stores need a support email + privacy-policy URL on the
+   domain; the custom-SMTP backlog item needs the same DNS). Optional:
+   rename the Vercel project `spendwise-web` (changes its vercel.app
+   host → allow-list). Also still by hand: register pocketpirate.app +
+   .in, create the App Store Connect record (reserves the name), search
+   IP India classes 9/36/42. Vercel Hobby is non-commercial — upgrade to
+   Pro before charging users or showing ads.
 
 ## Backlog (future — capture, don't build until scheduled)
 

@@ -27,10 +27,10 @@ export function AppHeader({
       <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center px-4 sm:h-16 sm:flex-nowrap">
         <Link href="/" className="flex h-14 items-center gap-2 sm:h-auto">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
-            S
+            P
           </span>
           <span className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Spendwise
+            PocketPirate
           </span>
         </Link>
 

@@ -16,10 +16,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  applicationName: "Spendwise",
+  applicationName: "PocketPirate",
   title: {
-    default: "Spendwise",
-    template: "%s · Spendwise",
+    default: "PocketPirate",
+    template: "%s · PocketPirate",
   },
   description: "Track expenses solo or with your flatmates.",
   // Installed on an iPhone: standalone window, default (light) status bar.
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   // apple-icon files beside this layout are picked up automatically.
   appleWebApp: {
     capable: true,
-    title: "Spendwise",
+    title: "PocketPirate",
     statusBarStyle: "default",
   },
 };

@@ -81,7 +81,7 @@ export function AddMember({ groupId }: { groupId: string }) {
         </button>
       </div>
       <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-        They need a Spendwise account with this email.
+        They need a PocketPirate account with this email.
       </p>
 
       {error && (

@@ -17,10 +17,10 @@ export default function OfflinePage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center justify-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-base font-bold text-white">
-            S
+            P
           </span>
           <span className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Spendwise
+            PocketPirate
           </span>
         </div>
 
@@ -29,7 +29,7 @@ export default function OfflinePage() {
             You&rsquo;re offline
           </h1>
           <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            Spendwise needs a connection to show your expenses and balances.
+            PocketPirate needs a connection to show your expenses and balances.
             Reconnect and try again.
           </p>
           <div className="mt-6">

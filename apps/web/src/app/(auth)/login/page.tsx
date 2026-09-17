@@ -9,7 +9,7 @@ import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to Spendwise with your Google account.",
+  description: "Sign in to PocketPirate with your Google account.",
 };
 
 export default async function LoginPage({
@@ -34,10 +34,10 @@ export default async function LoginPage({
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center justify-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-base font-bold text-white">
-            S
+            P
           </span>
           <span className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Spendwise
+            PocketPirate
           </span>
         </div>
 

@@ -1,5 +1,5 @@
 /*
- * Spendwise service worker.
+ * PocketPirate service worker.
  *
  * Deliberately small. Every page in this app shows live, user-specific data
  * (balances, expenses), so page HTML is never cached — a stale balance is
@@ -20,8 +20,8 @@
  * Bump VERSION to drop every existing cache on the next activation.
  */
 const VERSION = "v1";
-const OFFLINE_CACHE = `spendwise-offline-${VERSION}`;
-const STATIC_CACHE = `spendwise-static-${VERSION}`;
+const OFFLINE_CACHE = `pocketpirate-offline-${VERSION}`;
+const STATIC_CACHE = `pocketpirate-static-${VERSION}`;
 const OFFLINE_URL = "/offline";
 const STATIC_LIMIT = 200;
 
@@ -34,7 +34,10 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const keep = new Set([OFFLINE_CACHE, STATIC_CACHE]);
       for (const key of await caches.keys()) {
-        if (key.startsWith("spendwise-") && !keep.has(key)) {
+        if (
+          (key.startsWith("pocketpirate-") || key.startsWith("spendwise-")) &&
+          !keep.has(key)
+        ) {
           await caches.delete(key);
         }
       }
