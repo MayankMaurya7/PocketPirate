@@ -901,27 +901,60 @@ Not yet built (immediate next steps):
    to `bom1` (dashboard).
 2. Custom SMTP for auth emails (see backlog), then restore email+password
    sign-in. Account menu contents (theme switch + display-name editor).
-3. **Wire pocketpirate.com** (bought 2026-09-18 on Cloudflare Registrar,
-   2-year term to 2028-09-18, auto-renew on; DNS not configured). Plan
-   (decision 2026-09-18: keep Vercel for hosting, Cloudflare = registrar
-   + DNS only, proxy OFF / grey cloud — no Cloudflare proxy in front of
-   Vercel, no move to Workers): (a) Vercel project → Settings → Domains →
-   add `pocketpirate.com` + `www.pocketpirate.com`, apex primary (www
-   redirects), copy the records Vercel shows into Cloudflare DNS with
-   proxy off, wait for the cert; (b) Supabase Auth → URL Configuration:
-   Site URL `https://pocketpirate.com`, add `https://pocketpirate.com/**`
-   to the allow-list (keep the vercel.app entry as fallback); (c) Google
-   Cloud OAuth consent screen: app name PocketPirate, authorised domain
-   `pocketpirate.com`, homepage/privacy links (the client's redirect URI
-   is Supabase's and does not change; the project is still named
+3. **Finish wiring pocketpirate.com** (bought 2026-09-18 on Cloudflare
+   Registrar, 2-year term to 2028-09-18, auto-renew on). **DNS + hosting
+   done and verified 2026-09-18**: Vercel project `spendwise-web` has
+   `pocketpirate.com` → Production (primary) and `www.pocketpirate.com`
+   → 308 to the apex; Cloudflare DNS has two **CNAME** records (`@` and
+   `www`, both → `5dc87a590dc32aa1.vercel-dns-017.com`, **DNS only /
+   grey cloud** — Vercel asks for a CNAME on the apex when it detects
+   Cloudflare, which flattens it). Checked with dig/curl/openssl: apex
+   resolves to Vercel, Let's Encrypt cert for `pocketpirate.com`, http →
+   https 308, www → apex 308, login page says PocketPirate, manifest /
+   sw.js / icons / offline all 200. **Ignore Cloudflare's "Proxying is
+   required…" banner** — decision 2026-09-18: Vercel hosts and
+   terminates TLS, Cloudflare is registrar + DNS only; turning the proxy
+   on breaks Vercel's cert renewal and double-CDNs the app. **Still to
+   do by hand**: (c) Google Cloud
+   OAuth consent screen: app name PocketPirate, authorised domain
+   `pocketpirate.com`, homepage link (the client's redirect URI is
+   Supabase's and does not change; the project is still named
    "SpendWise"); (d) Cloudflare Email Routing: hello@ / support@ →
    Gmail (the stores need a support email + privacy-policy URL on the
-   domain; the custom-SMTP backlog item needs the same DNS). Optional:
-   rename the Vercel project `spendwise-web` (changes its vercel.app
-   host → allow-list). Also still by hand: register pocketpirate.app +
-   .in, create the App Store Connect record (reserves the name), search
-   IP India classes 9/36/42. Vercel Hobby is non-commercial — upgrade to
-   Pro before charging users or showing ads.
+   domain; the custom-SMTP backlog item needs the same DNS); then sign
+   in once on the phone at the new origin and reinstall the home-screen
+   app (the old install is bound to the vercel.app origin). Optional:
+   rename the Vercel project (changes its vercel.app host → allow-list).
+   Also: register pocketpirate.app + .in, create the App Store Connect
+   record (reserves the name), search IP India classes 9/36/42. Vercel
+   Hobby is non-commercial — upgrade to Pro before charging users or
+   showing ads.
+   **Supabase (b) done 2026-09-18** by the developer (Site URL +
+   allow-list); the Supabase project display name was changed to
+   "pocketpirate" the same day — display only, the CLI link, keys and
+   URLs use the ref. **The project ref `ymsixpeyipgtetfucnkp` can never
+   be changed**, and Google's account chooser says "continue to
+   ymsixpeyipgtetfucnkp.supabase.co" because the OAuth redirect URI is
+   Supabase's. Three ways to fix that, none done: (1) **Google brand
+   verification** (free; needs a public homepage on pocketpirate.com
+   that describes the app + links a privacy policy, domain verified in
+   Search Console, a few business days — today `/` redirects to
+   `/login`, so this needs a public landing + `/privacy` page first);
+   (2) **Google Identity Services + `signInWithIdToken`** (free, code
+   change: the Google button runs on our own origin so Google shows
+   pocketpirate.com; needs the origin under the OAuth client's
+   Authorised JavaScript origins and nonce handling); (3) **Supabase
+   custom domain** `auth.pocketpirate.com` (Pro plan + custom-domain
+   add-on, roughly $35/month; also changes the API URL env var and the
+   Google redirect URI). Recommendation: (1) when the landing/privacy
+   pages exist for the stores anyway, (3) only once the app pays for it.
+   **Side finding 2026-09-18**: a signed-out GET of `/` (and `/join/x`)
+   now answers **200 + `<meta http-equiv="refresh" content="1;url=/login">`**
+   instead of the 307 recorded on 2026-09-06 — since `loading.tsx` was
+   added the shell streams before the page's `redirect()` runs, so the
+   status is already sent. Same on both hosts, works in a browser (JS
+   redirects at once), but crawlers/link previews see a 200 skeleton.
+   Fix when it matters: do the signed-out redirect in the middleware.
 
 ## Backlog (future — capture, don't build until scheduled)
 
