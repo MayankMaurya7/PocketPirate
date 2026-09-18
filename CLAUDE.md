@@ -915,11 +915,7 @@ Not yet built (immediate next steps):
    required…" banner** — decision 2026-09-18: Vercel hosts and
    terminates TLS, Cloudflare is registrar + DNS only; turning the proxy
    on breaks Vercel's cert renewal and double-CDNs the app. **Still to
-   do by hand**: (c) Google Cloud
-   OAuth consent screen: app name PocketPirate, authorised domain
-   `pocketpirate.com`, homepage link (the client's redirect URI is
-   Supabase's and does not change; the project is still named
-   "SpendWise"); (d) Cloudflare Email Routing: hello@ / support@ →
+   do by hand**: publish the Google OAuth app (see below); (d) Cloudflare Email Routing: hello@ / support@ →
    Gmail (the stores need a support email + privacy-policy URL on the
    domain; the custom-SMTP backlog item needs the same DNS); then sign
    in once on the phone at the new origin and reinstall the home-screen
@@ -930,7 +926,9 @@ Not yet built (immediate next steps):
    Hobby is non-commercial — upgrade to Pro before charging users or
    showing ads.
    **Supabase (b) done 2026-09-18** by the developer (Site URL +
-   allow-list); the Supabase project display name was changed to
+   allow-list) — **Google sign-in confirmed working on
+   https://pocketpirate.com the same day** (lands back on the new
+   origin, not vercel.app); the Supabase project display name was changed to
    "pocketpirate" the same day — display only, the CLI link, keys and
    URLs use the ref. **The project ref `ymsixpeyipgtetfucnkp` can never
    be changed**, and Google's account chooser says "continue to
@@ -948,6 +946,30 @@ Not yet built (immediate next steps):
    add-on, roughly $35/month; also changes the API URL env var and the
    Google redirect URI). Recommendation: (1) when the landing/privacy
    pages exist for the stores anyway, (3) only once the app pays for it.
+   **Google consent screen (c) done 2026-09-18** (home page
+   `https://pocketpirate.com`, authorised domains = the supabase.co host
+   + `pocketpirate.com`, no logo). As expected the account chooser still
+   says "continue to ymsixpeyipgtetfucnkp.supabase.co" — authorised
+   domains are an allow-list, not what is displayed; only the three
+   fixes above change that line. **Found the same day: the Google OAuth
+   app is in "Testing" publishing status** — only accounts listed under
+   Audience → Test users can sign in (others get "Access blocked",
+   cap 100 users). Before inviting real users: Audience → Publish app
+   (In production). The app asks only for email/profile/openid, so no
+   verification is needed to publish; brand verification (name + logo
+   on the chooser) is a separate, later request and needs the public
+   landing + privacy pages. **Publish is blocked (seen 2026-09-18)**:
+   the Audience page greys out "Publish app" with "you must complete
+   your configuration on the Branding page" — most likely the missing
+   privacy-policy link (home page is set, privacy/terms are empty), so
+   publishing also waits for a public `/privacy` page. The same page
+   shows 0 test users and "0 users / 100 cap" although several Google
+   accounts have signed in (confirmed by the developer: a brand-new
+   account, pocketpirate01@gmail.com, signed up and logged in fine on
+   2026-09-18), so Google is evidently not enforcing the
+   test-user list for this app's basic scopes (email/profile/openid) —
+   the Testing status is not blocking sign-ups today, but do not rely
+   on it; publish once the privacy page exists.
    **Side finding 2026-09-18**: a signed-out GET of `/` (and `/join/x`)
    now answers **200 + `<meta http-equiv="refresh" content="1;url=/login">`**
    instead of the 307 recorded on 2026-09-06 — since `loading.tsx` was
