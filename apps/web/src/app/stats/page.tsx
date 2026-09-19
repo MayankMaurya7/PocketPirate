@@ -24,6 +24,15 @@ export default async function StatsPage() {
   // "this year" plus its like-for-like comparison against last year.
   const since = `${new Date().getUTCFullYear() - 1}-01-01`;
 
+  // Independent of the expenses, so it runs alongside the paging loop below
+  // rather than after it. A Supabase query builder is lazy — the request is
+  // only sent once it is awaited or `.then()`ed — hence the explicit `.then`.
+  const categoriesRequest = supabase
+    .from("categories")
+    .select("id, name, color, icon")
+    .order("name")
+    .then((result) => result);
+
   // Page through the result: the API truncates silently at PAGE_SIZE rows.
   const expenses: StatsExpense[] = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
@@ -47,10 +56,7 @@ export default async function StatsPage() {
     }
   }
 
-  const { data: categories } = await supabase
-    .from("categories")
-    .select("id, name, color, icon")
-    .order("name");
+  const { data: categories } = await categoriesRequest;
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">

@@ -956,8 +956,12 @@ Done and on `main`:
 Not yet built (immediate next steps):
 0. **Feedback plan, remaining steps** (approved 2026-09-19; one step per
    session, full text in `~/.claude/plans/ok-before-we-cryptic-lollipop.md`):
-   (2) `/stats`: start the categories query before the serial expense
-   loop. (3) **Instant tabs via Next's own router cache, not a hand-built
+   (2) done 2026-09-20 — `/stats` sends the categories query before the
+   serial 1000-row expense loop and awaits it after. **A Supabase query
+   builder is lazy: the request is only sent on `await` / `.then()`**
+   (checked in postgrest-js `PostgrestBuilder.then`), so "start now,
+   await later" needs an explicit `.then((r) => r)`; a bare builder in a
+   variable does nothing until awaited. (3) **Instant tabs via Next's own router cache, not a hand-built
    cache**: `prefetch={true}` on the four tab links +
    `experimental.staleTimes.static: 300` + a `RefreshOnResume` client
    component (`router.refresh()` when the page was hidden > ~30 s).
