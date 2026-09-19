@@ -888,12 +888,96 @@ Done and on `main`:
   change already makes the names new). Left alone on purpose: the
   comment on line 1 of migration 001 (applied history), the GitHub repo
   `MayankMaurya7/spendwise`, the Vercel project `spendwise-web` and the
-  Google Cloud project "SpendWise" (dashboard renames, see item 3
+  Google Cloud project "SpendWise" (dashboard renames, see item 4
   below). Branding is placeholder-level: the "P" mark and the
   "Track expenses solo or with your flatmates" description are unchanged
   in tone; a real pirate mark and colour decision are open.
 
+- **Live on https://pocketpirate.com** (2026-09-18). Domain bought on
+  Cloudflare Registrar (2-year term to 2028-09-18, auto-renew on).
+  **Decision: Vercel keeps hosting and TLS; Cloudflare is registrar +
+  DNS only, proxy OFF** (grey cloud) — no Cloudflare proxy in front of
+  Vercel, no move to Workers; ignore Cloudflare's "Proxying is
+  required…" banner (the proxy double-CDNs the app and can break
+  Vercel's cert renewal). Vercel project `spendwise-web`:
+  `pocketpirate.com` → Production (primary), `www.pocketpirate.com` →
+  308 to the apex. Cloudflare DNS: two **CNAME** records (`@` and
+  `www`, both → `5dc87a590dc32aa1.vercel-dns-017.com`, DNS only) —
+  Vercel asks for a CNAME on the apex when it detects Cloudflare, which
+  flattens it. Verified with dig/curl/openssl: Let's Encrypt cert,
+  http → https 308, www → apex 308, manifest / sw.js / icons / offline
+  all 200. Supabase Auth: Site URL `https://pocketpirate.com`,
+  allow-list has `https://pocketpirate.com/**` + localhost + the
+  vercel.app host (still works as a fallback); Supabase project display
+  name is now "pocketpirate" (**the ref `ymsixpeyipgtetfucnkp` can never
+  change**). Google Auth Platform → Branding: home page
+  `https://pocketpirate.com`, authorised domains = the supabase.co host
+  + `pocketpirate.com`, no logo, privacy/terms links empty. **Google
+  sign-in and a brand-new account's sign-up confirmed working on the
+  new origin.** The Google OAuth app is still in **"Testing"** status
+  with 0 test users — Google does not enforce the test-user list for
+  this app's basic scopes (email/profile/openid), so nobody is blocked,
+  but don't rely on it (see item 3 below). The account chooser still
+  says "continue to ymsixpeyipgtetfucnkp.supabase.co": authorised
+  domains are an allow-list, not what is displayed — the line comes
+  from the redirect URI. Fixes: brand verification (free, chosen, item
+  3), Google Identity Services + `signInWithIdToken` on our own origin
+  (free, code change), or a Supabase custom domain (Pro + add-on,
+  ~$35/month, only once the app pays for it). Vercel Hobby is
+  non-commercial — upgrade to Pro before charging users or showing ads.
+
+- **Phone bottom tab bar** (2026-09-20, user feedback: tabs out of thumb
+  reach; step 1 of the feedback plan below). `NavTabs` is still **one
+  `<nav>` with one set of links**, restyled: below `sm` it is `fixed` to
+  the bottom of the viewport (icon over an 11px label, four equal tabs,
+  active = emerald-700 / emerald-400 text, `pb-[env(safe-area-inset-bottom)]`,
+  `z-10`, under the AccountMenu panel's `z-20`; native dialogs are in the
+  top layer so it never covers them); from `sm` up it is the old underline
+  tabs in the header. This **supersedes the "tabs form their own row under
+  the wordmark" description in "Mobile layout"**: the phone header is now
+  one `h-14` row of wordmark + gear. The phone-only styles use `max-sm:`
+  (not mobile-first + `sm:` undo) because a background on the nav at `sm`
+  would paint over the header border its `-mb-px` underline sits on, and
+  because `dark:` vs `sm:` colour precedence is then never in question.
+  `globals.css` defines `--bottom-nav-h: 3.5rem` and
+  `--bottom-nav-space` (= height + safe-area inset, **`0px` from `sm`**).
+  **Rule: every page that renders `AppHeader` pads its `main` with
+  `pb-[calc(var(--bottom-nav-space)+<gap>)]`** (1.5rem list pages and
+  `PageSkeleton`, 7rem on `/groups/[id]` + its loading for the FAB, 4rem
+  on `/join`); `AddExpenseFab` sits at `bottom-[calc(var(--bottom-nav-space)+1rem)]
+  right-4` on phones. Icons added: `ReceiptIcon`, `ChartIcon`, `TagIcon`;
+  these and `UsersIcon` take an optional `className`. Verified by
+  lint/build and by reading the compiled CSS only — **not seen in a
+  browser** (signed-in pages need a Google session). To check on a phone:
+  last row and FAB clear the bar, and whether Android Chrome lifts the bar
+  above the keyboard while an inline form has focus (if ugly: hide the
+  bar while an input is focused).
+
 Not yet built (immediate next steps):
+0. **Feedback plan, remaining steps** (approved 2026-09-19; one step per
+   session, full text in `~/.claude/plans/ok-before-we-cryptic-lollipop.md`):
+   (2) `/stats`: start the categories query before the serial expense
+   loop. (3) **Instant tabs via Next's own router cache, not a hand-built
+   cache**: `prefetch={true}` on the four tab links +
+   `experimental.staleTimes.static: 300` + a `RefreshOnResume` client
+   component (`router.refresh()` when the page was hidden > ~30 s).
+   Verified in next 16.2.10 source: `router.refresh()` bumps a global
+   segment-cache version (drops every prefetched route) and re-pings
+   visible links, so the existing refresh calls are already the
+   invalidation. Trade-off to accept: another member's change can be up
+   to 5 min stale on a tab switch; test against `next start` (prefetch is
+   production-only). (4) reference-count the body scroll lock in
+   `useNativeDialog`. (5) **Unsaved-changes guard**: root-layout
+   `UnsavedChangesProvider` + `useUnsavedChanges(dirty)` + `GuardedLink`
+   (`Link` `onNavigate` → `preventDefault` → shared `ConfirmDialog`
+   "Discard changes?" / "Keep editing"), `beforeunload` while dirty,
+   guards on `ExpenseScreen` / `Modal` close paths; the forms that lose
+   input to a tab tap today are the inline ones (`SettleUpForm`,
+   `GroupForm`, `CategoryForm`) — the expense editor is a modal, so tabs
+   are already inert behind it. (6) phone Back closes the expense screen
+   (`pushState`/`popstate`; drop if fragile). Backlog from it: an
+   `(app)` route-group layout owning the header, `sessionStorage`
+   drafts, Realtime for cross-member freshness.
 1. **Test the 2026-09-09 batch on a phone** (nothing was exercised in a
    browser by the agent): edit another member's expense, the "Anyone can
    edit" switch, simplify debts as a non-owner, the activity trail lines,
@@ -901,82 +985,35 @@ Not yet built (immediate next steps):
    to `bom1` (dashboard).
 2. Custom SMTP for auth emails (see backlog), then restore email+password
    sign-in. Account menu contents (theme switch + display-name editor).
-3. **Finish wiring pocketpirate.com** (bought 2026-09-18 on Cloudflare
-   Registrar, 2-year term to 2028-09-18, auto-renew on). **DNS + hosting
-   done and verified 2026-09-18**: Vercel project `spendwise-web` has
-   `pocketpirate.com` → Production (primary) and `www.pocketpirate.com`
-   → 308 to the apex; Cloudflare DNS has two **CNAME** records (`@` and
-   `www`, both → `5dc87a590dc32aa1.vercel-dns-017.com`, **DNS only /
-   grey cloud** — Vercel asks for a CNAME on the apex when it detects
-   Cloudflare, which flattens it). Checked with dig/curl/openssl: apex
-   resolves to Vercel, Let's Encrypt cert for `pocketpirate.com`, http →
-   https 308, www → apex 308, login page says PocketPirate, manifest /
-   sw.js / icons / offline all 200. **Ignore Cloudflare's "Proxying is
-   required…" banner** — decision 2026-09-18: Vercel hosts and
-   terminates TLS, Cloudflare is registrar + DNS only; turning the proxy
-   on breaks Vercel's cert renewal and double-CDNs the app. **Still to
-   do by hand**: publish the Google OAuth app (see below); (d) Cloudflare Email Routing: hello@ / support@ →
-   Gmail (the stores need a support email + privacy-policy URL on the
-   domain; the custom-SMTP backlog item needs the same DNS); then sign
-   in once on the phone at the new origin and reinstall the home-screen
-   app (the old install is bound to the vercel.app origin). Optional:
-   rename the Vercel project (changes its vercel.app host → allow-list).
-   Also: register pocketpirate.app + .in, create the App Store Connect
-   record (reserves the name), search IP India classes 9/36/42. Vercel
-   Hobby is non-commercial — upgrade to Pro before charging users or
-   showing ads.
-   **Supabase (b) done 2026-09-18** by the developer (Site URL +
-   allow-list) — **Google sign-in confirmed working on
-   https://pocketpirate.com the same day** (lands back on the new
-   origin, not vercel.app); the Supabase project display name was changed to
-   "pocketpirate" the same day — display only, the CLI link, keys and
-   URLs use the ref. **The project ref `ymsixpeyipgtetfucnkp` can never
-   be changed**, and Google's account chooser says "continue to
-   ymsixpeyipgtetfucnkp.supabase.co" because the OAuth redirect URI is
-   Supabase's. Three ways to fix that, none done: (1) **Google brand
-   verification** (free; needs a public homepage on pocketpirate.com
-   that describes the app + links a privacy policy, domain verified in
-   Search Console, a few business days — today `/` redirects to
-   `/login`, so this needs a public landing + `/privacy` page first);
-   (2) **Google Identity Services + `signInWithIdToken`** (free, code
-   change: the Google button runs on our own origin so Google shows
-   pocketpirate.com; needs the origin under the OAuth client's
-   Authorised JavaScript origins and nonce handling); (3) **Supabase
-   custom domain** `auth.pocketpirate.com` (Pro plan + custom-domain
-   add-on, roughly $35/month; also changes the API URL env var and the
-   Google redirect URI). Recommendation: (1) when the landing/privacy
-   pages exist for the stores anyway, (3) only once the app pays for it.
-   **Google consent screen (c) done 2026-09-18** (home page
-   `https://pocketpirate.com`, authorised domains = the supabase.co host
-   + `pocketpirate.com`, no logo). As expected the account chooser still
-   says "continue to ymsixpeyipgtetfucnkp.supabase.co" — authorised
-   domains are an allow-list, not what is displayed; only the three
-   fixes above change that line. **Found the same day: the Google OAuth
-   app is in "Testing" publishing status** — only accounts listed under
-   Audience → Test users can sign in (others get "Access blocked",
-   cap 100 users). Before inviting real users: Audience → Publish app
-   (In production). The app asks only for email/profile/openid, so no
-   verification is needed to publish; brand verification (name + logo
-   on the chooser) is a separate, later request and needs the public
-   landing + privacy pages. **Publish is blocked (seen 2026-09-18)**:
-   the Audience page greys out "Publish app" with "you must complete
-   your configuration on the Branding page" — most likely the missing
-   privacy-policy link (home page is set, privacy/terms are empty), so
-   publishing also waits for a public `/privacy` page. The same page
-   shows 0 test users and "0 users / 100 cap" although several Google
-   accounts have signed in (confirmed by the developer: a brand-new
-   account, pocketpirate01@gmail.com, signed up and logged in fine on
-   2026-09-18), so Google is evidently not enforcing the
-   test-user list for this app's basic scopes (email/profile/openid) —
-   the Testing status is not blocking sign-ups today, but do not rely
-   on it; publish once the privacy page exists.
-   **Side finding 2026-09-18**: a signed-out GET of `/` (and `/join/x`)
-   now answers **200 + `<meta http-equiv="refresh" content="1;url=/login">`**
-   instead of the 307 recorded on 2026-09-06 — since `loading.tsx` was
-   added the shell streams before the page's `redirect()` runs, so the
-   status is already sent. Same on both hosts, works in a browser (JS
-   redirects at once), but crawlers/link previews see a 200 skeleton.
-   Fix when it matters: do the signed-out redirect in the middleware.
+3. **Public landing + privacy pages** (next build step, decided
+   2026-09-18; not started). A public `/privacy` page and a simple
+   public landing at `/` for signed-out visitors (signed-in users keep
+   the expense list). One step, no schema change. It unblocks four
+   things at once: (a) publishing the Google OAuth app — Audience →
+   "Publish app" is greyed out until the Branding page has a
+   privacy-policy link; (b) Google **brand verification**, the free fix
+   for the account chooser saying "continue to
+   ymsixpeyipgtetfucnkp.supabase.co" (needs a published app, a public
+   homepage describing the app + linking the policy, and the domain
+   verified in Search Console; takes a few business days; add the logo
+   only then — uploading one starts verification); (c) the App Store /
+   Play Store listing requirements; (d) link previews and crawlers,
+   which today get a 200 loading skeleton + `<meta refresh>` to
+   `/login` because `loading.tsx` streams before the page's
+   `redirect()` — do the signed-out redirect for the other routes in
+   the middleware while there. After it ships: fill the privacy link on
+   the Branding page, publish, request verification.
+4. **Small manual leftovers from the domain move** (none blocking):
+   Cloudflare Email Routing (hello@ / support@ → Gmail; accept the MX +
+   TXT records it offers — the stores need a support address and the
+   custom-SMTP backlog item uses the same zone); reinstall the
+   home-screen app from https://pocketpirate.com (the old install is
+   bound to the vercel.app origin and keeps the old name/icon);
+   register pocketpirate.app + .in; create the App Store Connect record
+   (reserves the listing name); search IP India classes 9/36/42.
+   Optional: rename the Vercel project `spendwise-web` (changes its
+   vercel.app host → update the Supabase allow-list) and the Google
+   Cloud project "SpendWise".
 
 ## Backlog (future — capture, don't build until scheduled)
 

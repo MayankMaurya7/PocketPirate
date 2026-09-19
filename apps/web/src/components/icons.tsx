@@ -69,9 +69,9 @@ export function InfoIcon() {
   );
 }
 
-export function UsersIcon() {
+export function UsersIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
-    <svg {...iconProps} className="h-3.5 w-3.5">
+    <svg {...iconProps} className={className}>
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -132,6 +132,37 @@ export function ChevronDownIcon() {
   return (
     <svg {...iconProps} className="h-4 w-4 shrink-0 text-zinc-400">
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+export function ReceiptIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg {...iconProps} className={className}>
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M14 8H8" />
+      <path d="M16 12H8" />
+      <path d="M13 16H8" />
+    </svg>
+  );
+}
+
+export function ChartIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg {...iconProps} className={className}>
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
+    </svg>
+  );
+}
+
+export function TagIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg {...iconProps} className={className}>
+      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
     </svg>
   );
 }

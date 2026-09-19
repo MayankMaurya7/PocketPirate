@@ -58,7 +58,7 @@ export default async function JoinPage({
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="groups" />
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 items-start justify-center px-4 py-16">
+      <main className="mx-auto flex w-full max-w-3xl flex-1 items-start justify-center px-4 pb-[calc(var(--bottom-nav-space)+4rem)] pt-16">
         <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           {preview === null ? (
             <>

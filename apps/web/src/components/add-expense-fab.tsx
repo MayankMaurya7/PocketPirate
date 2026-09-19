@@ -9,7 +9,8 @@ import type { CategoryOption, GroupOption } from "@/lib/types";
 
 /**
  * Always-visible "Add expense" button pinned to the bottom-right corner
- * (clear of the iPhone home indicator), opening the expense screen. Adding
+ * (above the phone tab bar, clear of the iPhone home indicator), opening
+ * the expense screen. Adding
  * is the app's primary action and must not depend on where the user has
  * scrolled to.
  */
@@ -31,7 +32,7 @@ export function AddExpenseFab({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-6 z-10 inline-flex items-center gap-2 rounded-full bg-emerald-600 py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+        className="fixed bottom-[calc(var(--bottom-nav-space)+1rem)] right-4 sm:bottom-[max(1.5rem,env(safe-area-inset-bottom))] sm:right-6 z-10 inline-flex items-center gap-2 rounded-full bg-emerald-600 py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
       >
         <PlusIcon />
         Add expense

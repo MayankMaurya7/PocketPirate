@@ -39,7 +39,7 @@ export default async function GroupsPage() {
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-zinc-950">
       <AppHeader email={email} current="groups" />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:py-10">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-[calc(var(--bottom-nav-space)+1.5rem)] pt-6 sm:pb-10 sm:pt-10">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Groups

@@ -5,6 +5,24 @@
   --foreground: #171717;
 }
 
+/*
+ * The phone bottom tab bar (`NavTabs`). `--bottom-nav-space` is what the bar
+ * takes off the bottom of the viewport — its height plus the home-indicator
+ * inset — and is 0 from `sm` up, where the tabs sit in the header instead.
+ * Page `main` padding and the Add expense FAB offset are built on it, so
+ * they can never disagree with the bar.
+ */
+:root {
+  --bottom-nav-h: 3.5rem;
+  --bottom-nav-space: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --bottom-nav-space: 0px;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

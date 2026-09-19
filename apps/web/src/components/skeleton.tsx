@@ -48,7 +48,7 @@ export function PageSkeleton({
       <AppHeader email="" current={current} />
       <main
         aria-busy="true"
-        className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:py-10"
+        className="mx-auto w-full max-w-3xl flex-1 px-4 pb-[calc(var(--bottom-nav-space)+1.5rem)] pt-6 sm:pb-10 sm:pt-10"
       >
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           {title}

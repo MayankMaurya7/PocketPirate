@@ -7,7 +7,7 @@ export default function Loading() {
       <AppHeader email="" current="groups" />
       <main
         aria-busy="true"
-        className="mx-auto w-full max-w-3xl flex-1 px-4 pb-28 pt-6 sm:pt-10"
+        className="mx-auto w-full max-w-3xl flex-1 px-4 pb-[calc(var(--bottom-nav-space)+7rem)] pt-6 sm:pt-10"
       >
         <Bone className="h-4 w-20" />
         <Bone className="mt-4 h-7 w-48 max-w-full" />
