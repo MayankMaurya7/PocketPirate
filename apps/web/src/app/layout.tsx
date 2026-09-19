@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { RefreshOnNavigate } from "@/components/refresh-on-navigate";
+import { RefreshOnResume } from "@/components/refresh-on-resume";
 import { ServiceWorker } from "@/components/service-worker";
 
 import "./globals.css";
@@ -58,6 +60,8 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <ServiceWorker />
+        <RefreshOnResume />
+        <RefreshOnNavigate />
       </body>
     </html>
   );

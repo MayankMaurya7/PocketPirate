@@ -31,8 +31,11 @@ export function ListSkeleton({ rows = 5 }: { rows?: number }) {
 /**
  * The shell every route's `loading.tsx` renders while its server component
  * fetches: the real header (so the tapped tab is already active) and a
- * page-shaped placeholder. Painted immediately on navigation, and Next
- * prefetches links up to this boundary so tabs open instantly.
+ * page-shaped placeholder. Painted immediately on navigation whenever the
+ * page itself is not already in the router cache — the nav tabs other
+ * than Stats prefetch whole pages (`staleTimes` in next.config.ts), so for
+ * them this shows only after that window has lapsed, or on a slow first
+ * prefetch.
  */
 export function PageSkeleton({
   current,

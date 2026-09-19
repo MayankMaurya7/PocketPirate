@@ -5,6 +5,20 @@ const nextConfig: NextConfig = {
   // compiled by Next rather than requiring a separate build step.
   transpilePackages: ["@expense-tracker/shared"],
 
+  experimental: {
+    // How long the client router keeps a fully prefetched page. The nav tabs
+    // other than Stats use `prefetch={true}` (NavTabs), so their pages are
+    // fetched in the background on landing and a tab switch within this
+    // window renders at once, with no skeleton. 300 s is Next's default,
+    // written out because it is a product decision: what is shown first can
+    // be this old. It does not stay old — RefreshOnNavigate refreshes in the
+    // background after the switch (at most once a minute), RefreshOnResume on
+    // coming back to the app, and every mutation calls router.refresh(),
+    // which drops all prefetched pages and re-warms the tabs. The minimum
+    // Next accepts is 30.
+    staleTimes: { static: 300 },
+  },
+
   async headers() {
     return [
       {

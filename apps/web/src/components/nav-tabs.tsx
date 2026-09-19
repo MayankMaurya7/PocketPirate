@@ -11,12 +11,25 @@ const NAV: {
   href: string;
   label: string;
   Icon: (props: { className?: string }) => React.ReactNode;
+  /**
+   * Fetch the whole page in the background as soon as the tab is visible,
+   * not just its loading skeleton, so the tab opens instantly from the
+   * router cache (see `staleTimes` in next.config.ts; production only, dev
+   * never prefetches). Off for Stats: its paging query is the heaviest in
+   * the app and would re-run after every refresh from any tab.
+   */
+  prefetch: boolean;
 }[] = [
-  { key: "expenses", href: "/", label: "Expenses", Icon: ReceiptIcon },
-  { key: "stats", href: "/stats", label: "Stats", Icon: ChartIcon },
-  { key: "groups", href: "/groups", label: "Groups", Icon: UsersIcon },
-  { key: "categories", href: "/categories", label: "Categories", Icon: TagIcon },
+  { key: "expenses", href: "/", label: "Expenses", Icon: ReceiptIcon, prefetch: true },
+  { key: "stats", href: "/stats", label: "Stats", Icon: ChartIcon, prefetch: false },
+  { key: "groups", href: "/groups", label: "Groups", Icon: UsersIcon, prefetch: true },
+  { key: "categories", href: "/categories", label: "Categories", Icon: TagIcon, prefetch: true },
 ];
+
+/** Pages served from the router cache on a tab tap (`RefreshOnNavigate`). */
+export const PREFETCHED_PATHS = NAV.filter((item) => item.prefetch).map(
+  (item) => item.href,
+);
 
 /**
  * The primary nav: one set of links, two shapes. On phones it is a bar
@@ -41,10 +54,12 @@ export function NavTabs({ current }: { current: Section }) {
       aria-label="Primary"
       className="flex items-stretch max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-10 max-sm:border-t max-sm:border-zinc-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] max-sm:dark:border-zinc-800 max-sm:dark:bg-zinc-900 sm:-mb-px sm:ml-8 sm:self-stretch"
     >
-      {NAV.map(({ key, href, label, Icon }) => (
+      {NAV.map(({ key, href, label, Icon, prefetch }) => (
         <Link
           key={key}
           href={href}
+          // `null` is Next's default: prefetch up to the loading skeleton.
+          prefetch={prefetch ? true : null}
           aria-current={key === current ? "page" : undefined}
           onClick={() => setTapped(key)}
           className={`flex flex-1 items-center justify-center whitespace-nowrap font-medium transition max-sm:h-[var(--bottom-nav-h)] max-sm:flex-col max-sm:gap-0.5 max-sm:text-[11px] sm:flex-none sm:border-b-2 sm:px-3 sm:text-sm ${

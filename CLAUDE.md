@@ -961,16 +961,48 @@ Not yet built (immediate next steps):
    builder is lazy: the request is only sent on `await` / `.then()`**
    (checked in postgrest-js `PostgrestBuilder.then`), so "start now,
    await later" needs an explicit `.then((r) => r)`; a bare builder in a
-   variable does nothing until awaited. (3) **Instant tabs via Next's own router cache, not a hand-built
-   cache**: `prefetch={true}` on the four tab links +
-   `experimental.staleTimes.static: 300` + a `RefreshOnResume` client
-   component (`router.refresh()` when the page was hidden > ~30 s).
+   variable does nothing until awaited. (3) done 2026-09-20, **untested in a browser** — **instant tabs via
+   Next's own router cache, not a hand-built cache**: `prefetch={true}`
+   on the four tab links (`NavTabs`) +
+   `experimental.staleTimes.static: 300` (`next.config.ts`) +
+   `components/refresh-on-resume.tsx` in the root layout
+   (`router.refresh()` when the page was hidden ≥ 30 s; skipped while
+   `navigator.onLine` is false, since a refresh that cannot reach the
+   server would land on `/offline` and take an open form with it). This
+   relaxes `sw.js`'s "never show a stale balance" stance for the router
+   cache only; the worker still caches no HTML or RSC. **Every mutation
+   must keep calling `router.refresh()`** — it is now also what
+   invalidates the other tabs. Each refresh re-prefetches the other
+   three tabs (incl. the stats paging loop); if that is heavy before the
+   `bom1` move, drop `prefetch` on `/stats`. To verify signed in against
+   `next start` or production (dev never prefetches): landing fires full
+   RSC prefetches for the other tabs, a tab tap makes no request and
+   shows no skeleton, adding an expense re-fires them and Stats shows
+   it, sign-out → another account shows none of the first user's data.
    Verified in next 16.2.10 source: `router.refresh()` bumps a global
    segment-cache version (drops every prefetched route) and re-pings
    visible links, so the existing refresh calls are already the
    invalidation. Trade-off to accept: another member's change can be up
    to 5 min stale on a tab switch; test against `next start` (prefetch is
-   production-only). (4) reference-count the body scroll lock in
+   production-only). (3b) done 2026-09-20, **untested in a browser** — **show cached,
+   then refresh**: `components/refresh-on-navigate.tsx` (root layout)
+   calls `router.refresh()` inside `useTransition` when the pathname
+   changes to one of `PREFETCHED_PATHS` (exported from `nav-tabs.tsx`:
+   `/`, `/groups`, `/categories`), at most once per 60 s
+   (`lib/last-refresh.ts`, a module clock shared with `RefreshOnResume`,
+   starting at page load; saves do not stamp it) and never offline; a
+   bottom-centre "Updating…" pill (`role="status"`, above the tab bar)
+   shows while it is pending. Other pages are skipped because the server
+   has just rendered them for that navigation. **Stats no longer
+   full-prefetches** (`NAV[].prefetch`, `null` = Next's default) — its
+   paging loop would re-run after every refresh. **Why not "refetch only
+   the tapped tab"**: the client router's only call is `router.refresh()`,
+   which is all-or-nothing (drops every prefetched page, re-pings every
+   visible prefetching link); per-tab cache ages need a client data layer
+   (Phase 3 backlog below). To verify signed in on production: tab tap
+   shows content at once, one `?_rsc=` refresh follows with the pill, a
+   second tap within 60 s makes no request, an open inline form survives.
+   (4) reference-count the body scroll lock in
    `useNativeDialog`. (5) **Unsaved-changes guard**: root-layout
    `UnsavedChangesProvider` + `useUnsavedChanges(dirty)` + `GuardedLink`
    (`Link` `onNavigate` → `preventDefault` → shared `ConfirmDialog`
@@ -979,9 +1011,26 @@ Not yet built (immediate next steps):
    input to a tab tap today are the inline ones (`SettleUpForm`,
    `GroupForm`, `CategoryForm`) — the expense editor is a modal, so tabs
    are already inert behind it. (6) phone Back closes the expense screen
-   (`pushState`/`popstate`; drop if fragile). Backlog from it: an
-   `(app)` route-group layout owning the header, `sessionStorage`
-   drafts, Realtime for cross-member freshness.
+   (`pushState`/`popstate`; drop if fragile). (7) **Atomic save +
+   edit conflicts (migration 014; decided 2026-09-20: the second saver is
+   rejected and shown the latest, never a silent overwrite).** Today two
+   members saving one expense seconds apart keep balances correct (sum
+   triggers) and both edits land in History, but the second save writes
+   *every* field from its stale form — a silent overwrite, or a raw,
+   un-retryable sum-check error when the first changed the amount. Fix:
+   `save_expense(_expense, _payers, _splits, _expected_updated_at)`,
+   SECURITY INVOKER (RLS and all triggers apply as now), `select … for
+   update` + version check raising a distinct SQLSTATE with "X changed
+   this expense while you were editing.", all five writes in one
+   transaction, always bumping `updated_at`; the form makes one RPC call
+   (drops `rowsDirty` / `savedExpenseId` / half-saved errors) and offers
+   "Load latest version". Payments: add `settlements.updated_at` and
+   `.eq("updated_at", …)` on edit. Backlog from this batch: an `(app)`
+   route-group layout owning the header, `sessionStorage` drafts, and the
+   **Phase 3 data layer — TanStack Query (per-key cache) + Supabase
+   Realtime (per-group change signal) in `packages/shared` for web and
+   mobile**, which replaces steps 3/3b and the `router.refresh()`
+   invalidation when it lands.
 1. **Test the 2026-09-09 batch on a phone** (nothing was exercised in a
    browser by the agent): edit another member's expense, the "Anyone can
    edit" switch, simplify debts as a non-owner, the activity trail lines,
