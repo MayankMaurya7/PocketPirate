@@ -16,7 +16,15 @@ const nextConfig: NextConfig = {
     // coming back to the app, and every mutation calls router.refresh(),
     // which drops all prefetched pages and re-warms the tabs. The minimum
     // Next accepts is 30.
-    staleTimes: { static: 300 },
+    //
+    // `dynamic` is the same idea for a page that was opened rather than
+    // prefetched (a group, Stats): Next's default of 0 re-renders it on the
+    // server every time, so leaving a group and coming straight back showed
+    // the skeleton again. With 300 a revisit inside five minutes renders at
+    // once from the router cache, and RefreshOnNavigate brings it up to date
+    // in the background exactly as it does for the tabs. Keep both numbers
+    // equal to CACHE_MS in components/refresh-on-navigate.tsx.
+    staleTimes: { static: 300, dynamic: 300 },
   },
 
   async headers() {

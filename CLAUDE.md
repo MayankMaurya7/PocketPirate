@@ -1002,6 +1002,24 @@ Not yet built (immediate next steps):
    (Phase 3 backlog below). To verify signed in on production: tab tap
    shows content at once, one `?_rsc=` refresh follows with the pill, a
    second tap within 60 s makes no request, an open inline form survives.
+   (3c) done 2026-09-21, **untested in a browser** — **revisited pages
+   open from cache** (feedback: leaving Goa Trip for the group list and
+   re-entering showed the skeleton every time): `staleTimes.dynamic: 300`
+   (default 0) keeps any *opened* dynamic page (a group, Stats) in the
+   router cache for 5 min; checked in 16.2.10 source — regular
+   navigations read it (`segment-cache/bfcache.js`,
+   `readFromBFCacheDuringRegularNavigation`) and `router.refresh()`
+   clears it, so own saves stay safe. `RefreshOnNavigate` no longer uses
+   only the fixed tab list: it keeps a `Map` of URL → last opened and
+   treats a page as served from cache when it is a prefetched tab **or
+   was opened within `CACHE_MS` (300 000, keep equal to `staleTimes`)**,
+   then does the same throttled background refresh; the map is emptied
+   on its own refresh. First open of a group in a session still shows the
+   skeleton (full-prefetching group rows was rejected: one heavy render
+   per visible group on every list visit and refresh). Known gap: the
+   effect keys on `pathname`, so returning to an earlier *filter* on `/`
+   (`/?group=…`, same pathname) can show that filtered list up to 5 min
+   old with no background refresh; own changes are unaffected.
    (4) done 2026-09-20 — the body scroll lock in `useNativeDialog`
    (`components/modal.tsx`) is **reference-counted** (module counter
    `scrollLocks`; taken in the effect while `open`, released in its
