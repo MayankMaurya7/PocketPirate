@@ -1002,8 +1002,22 @@ Not yet built (immediate next steps):
    (Phase 3 backlog below). To verify signed in on production: tab tap
    shows content at once, one `?_rsc=` refresh follows with the pill, a
    second tap within 60 s makes no request, an open inline form survives.
-   (4) reference-count the body scroll lock in
-   `useNativeDialog`. (5) **Unsaved-changes guard**: root-layout
+   (4) done 2026-09-20 — the body scroll lock in `useNativeDialog`
+   (`components/modal.tsx`) is **reference-counted** (module counter
+   `scrollLocks`; taken in the effect while `open`, released in its
+   cleanup, `overflow` cleared only at zero), so closing a confirm dialog
+   stacked over the members `Modal` or `ExpenseScreen` no longer unlocks
+   the page behind the dialog still open. Nothing else may write
+   `document.body.style.overflow`. **Nested dialog events** (bug seen
+   2026-09-21: Cancel in the remove-member confirm also closed the
+   members dialog): natively `close` / `cancel` do not bubble, but
+   **React bubbles them through its tree** (only `scroll`/`scrollend`
+   are target-only in react-dom 19.2.4), so a confirm dialog rendered
+   inside a `Modal` fired the modal's `onClose` too. Every `<dialog>`
+   handler (`Modal`, `ConfirmDialog`, `ExpenseScreen`) now returns early
+   unless `isOwnDialogEvent(event)` (`modal.tsx`: `target ===
+   currentTarget`); keep that on any new dialog handler, including the
+   `onCancel` guards step 5 adds. (5) **Unsaved-changes guard**: root-layout
    `UnsavedChangesProvider` + `useUnsavedChanges(dirty)` + `GuardedLink`
    (`Link` `onNavigate` → `preventDefault` → shared `ConfirmDialog`
    "Discard changes?" / "Keep editing"), `beforeunload` while dirty,

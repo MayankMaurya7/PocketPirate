@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeftIcon } from "@/components/icons";
-import { useNativeDialog } from "@/components/modal";
+import { isOwnDialogEvent, useNativeDialog } from "@/components/modal";
 
 /**
  * The full-height screen an expense is added or edited in. On phones it
@@ -28,7 +28,11 @@ export function ExpenseScreen({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      onClose={(event) => {
+        if (isOwnDialogEvent(event)) {
+          onClose();
+        }
+      }}
       className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none rounded-none border-0 bg-white p-0 text-zinc-900 backdrop:bg-zinc-950/50 sm:m-auto sm:h-auto sm:max-h-[90dvh] sm:w-[calc(100%-2rem)] sm:max-w-xl sm:rounded-2xl sm:border sm:border-zinc-200 sm:shadow-xl dark:bg-zinc-900 dark:text-zinc-100 dark:sm:border-zinc-800"
     >
       {open && (

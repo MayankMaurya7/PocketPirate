@@ -3,7 +3,7 @@
 import { useId } from "react";
 
 import { AlertTriangleIcon } from "@/components/icons";
-import { useNativeDialog } from "@/components/modal";
+import { isOwnDialogEvent, useNativeDialog } from "@/components/modal";
 
 /**
  * In-app replacement for `window.confirm` on destructive actions.
@@ -61,8 +61,15 @@ export function ConfirmDialog({
       role="alertdialog"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      onClose={onCancel}
+      onClose={(event) => {
+        if (isOwnDialogEvent(event)) {
+          onCancel();
+        }
+      }}
       onCancel={(event) => {
+        if (!isOwnDialogEvent(event)) {
+          return;
+        }
         // Escape: let the caller decide (it may keep the dialog open while
         // pending), rather than the browser closing it underneath us.
         event.preventDefault();
