@@ -12,6 +12,7 @@ import {
 
 import { createClient } from "@/lib/supabase/client";
 import { InfoIcon } from "@/components/icons";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 import type { Debt } from "@/lib/balances";
 import type { Settlement } from "@/lib/types";
 
@@ -71,6 +72,12 @@ export function SettleUpForm(
   const [note, setNote] = useState(initial.note);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const confirmDiscard = useUnsavedChanges(
+    amount !== minorUnitsToInputValue(initial.minorUnits, currency) ||
+      date !== initial.date ||
+      note !== initial.note,
+  );
 
   const amountMinorUnits = parseAmountToMinorUnits(amount, currency);
   // What is left of the debt after this payment — only meaningful while
@@ -249,7 +256,7 @@ export function SettleUpForm(
         </button>
         <button
           type="button"
-          onClick={onDone}
+          onClick={() => confirmDiscard(onDone)}
           disabled={pending}
           className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >

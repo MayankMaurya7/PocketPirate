@@ -3,7 +3,7 @@
 import { useId } from "react";
 
 import { AlertTriangleIcon } from "@/components/icons";
-import { isOwnDialogEvent, useNativeDialog } from "@/components/modal";
+import { isOwnDialogEvent, useNativeDialog } from "@/components/native-dialog";
 
 /**
  * In-app replacement for `window.confirm` on destructive actions.

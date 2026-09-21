@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 import type { CategoryWithUsage } from "@/lib/types";
 
 /** Preset swatches — the seeded defaults plus a few extras. */
@@ -45,11 +46,14 @@ export function CategoryForm({
   const router = useRouter();
 
   const [name, setName] = useState(category?.name ?? "");
-  const [color, setColor] = useState(
-    category?.color.toLowerCase() ?? PRESET_COLORS[0],
-  );
+  const initialColor = category?.color.toLowerCase() ?? PRESET_COLORS[0];
+  const [color, setColor] = useState(initialColor);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const confirmDiscard = useUnsavedChanges(
+    name !== (category?.name ?? "") || color !== initialColor,
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,7 +188,7 @@ export function CategoryForm({
         </button>
         <button
           type="button"
-          onClick={onDone}
+          onClick={() => confirmDiscard(onDone)}
           disabled={pending}
           className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >

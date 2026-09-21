@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { RefreshOnNavigate } from "@/components/refresh-on-navigate";
 import { RefreshOnResume } from "@/components/refresh-on-resume";
 import { ServiceWorker } from "@/components/service-worker";
+import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 
 import "./globals.css";
 
@@ -58,7 +59,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {children}
+        <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
         <ServiceWorker />
         <RefreshOnResume />
         <RefreshOnNavigate />

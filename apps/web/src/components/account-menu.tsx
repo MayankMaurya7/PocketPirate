@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
 import { LogOutIcon, SettingsIcon } from "@/components/icons";
+import { useGuard } from "@/components/unsaved-changes";
 
 /**
  * The gear button at the right of the header. Opens a small panel with the
@@ -18,6 +19,7 @@ import { LogOutIcon, SettingsIcon } from "@/components/icons";
  */
 export function AccountMenu({ email }: { email: string }) {
   const router = useRouter();
+  const confirmLeave = useGuard();
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -96,7 +98,7 @@ export function AccountMenu({ email }: { email: string }) {
 
         <button
           type="button"
-          onClick={handleSignOut}
+          onClick={() => confirmLeave(handleSignOut)}
           disabled={pending}
           className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
         >

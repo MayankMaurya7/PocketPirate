@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ActivityItem } from "@/components/activity-item";
 import { LocalTime } from "@/components/added-at";
 import { InfoIcon } from "@/components/icons";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 import { expenseMemberNamer, groupMemberNamer } from "@/lib/members";
 import type {
   ActivityEntry,
@@ -361,6 +362,13 @@ export function ExpenseForm({
   const [rowsDirty, setRowsDirty] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Any field changed since the form opened. A flag rather than a diff
+  // against `expense`: the inputs are strings and sets derived from it in
+  // several steps, and "typed, then typed back" still deserves the prompt
+  // less than a missed change does. Every native field reports through the
+  // form's `onChange`; the split-method buttons set it themselves.
+  const [touched, setTouched] = useState(false);
+  const confirmDiscard = useUnsavedChanges(touched);
 
   const selectedGroup = groups.find((group) => group.id === groupChoice) ?? null;
   const members = selectedGroup?.members ?? [];
@@ -448,6 +456,7 @@ export function ExpenseForm({
   }
 
   function changeSplitMode(mode: SplitMode) {
+    setTouched(true);
     setSplitMode(mode);
     if (mode === "equal") {
       return;
@@ -764,7 +773,11 @@ export function ExpenseForm({
   const groupNamer = groupMemberNamer(selectedGroup ?? undefined, userId);
 
   return (
-    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+    <form
+      onSubmit={handleSubmit}
+      onChange={() => setTouched(true)}
+      className="flex min-h-0 flex-1 flex-col"
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
       <fieldset disabled={locked} className="space-y-4">
         {readOnly && (
@@ -1170,7 +1183,7 @@ export function ExpenseForm({
           )}
           <button
             type="button"
-            onClick={onDone}
+            onClick={() => confirmDiscard(onDone)}
             disabled={pending}
             className={`rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 ${
               readOnly === null ? "flex-1 sm:flex-none" : "w-full sm:w-auto"

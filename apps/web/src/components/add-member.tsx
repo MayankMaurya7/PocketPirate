@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 
 /**
  * Owner-only: add a member by email. Calls the add_group_member_by_email RPC,
@@ -17,6 +18,9 @@ export function AddMember({ groupId }: { groupId: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+
+  // No Cancel of its own: the members dialog asks before it closes.
+  useUnsavedChanges(email.trim() !== "");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

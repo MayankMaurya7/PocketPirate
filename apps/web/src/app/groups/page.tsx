@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { AddGroup } from "@/components/add-group";
 import { AppHeader } from "@/components/app-header";
+import { GuardedLink } from "@/components/guarded-link";
 import { ChevronRightIcon } from "@/components/icons";
 import type { GroupSummary } from "@/lib/types";
 
@@ -66,7 +66,7 @@ export default async function GroupsPage() {
           <ul className="mt-6 divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
             {groupList.map((group) => (
               <li key={group.id}>
-                <Link
+                <GuardedLink
                   href={`/groups/${group.id}`}
                   className="flex items-center gap-3 px-4 py-3 transition hover:bg-zinc-50 sm:gap-4 sm:px-5 sm:py-4 dark:hover:bg-zinc-800/60"
                 >
@@ -89,7 +89,7 @@ export default async function GroupsPage() {
                   </div>
 
                   <ChevronRightIcon />
-                </Link>
+                </GuardedLink>
               </li>
             ))}
           </ul>

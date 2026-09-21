@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { useUnsavedChanges } from "@/components/unsaved-changes";
 
 const inputClasses =
   "mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
@@ -24,6 +25,8 @@ export function GroupForm({
   const [name, setName] = useState(group?.name ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const confirmDiscard = useUnsavedChanges(name !== (group?.name ?? ""));
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,7 +129,7 @@ export function GroupForm({
         </button>
         <button
           type="button"
-          onClick={onDone}
+          onClick={() => confirmDiscard(onDone)}
           disabled={pending}
           className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >

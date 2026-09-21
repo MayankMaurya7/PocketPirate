@@ -724,7 +724,8 @@ Done and on `main`:
   and shows a failure (e.g. the leave-guard trigger message) inside itself
   instead of vanishing. Buttons stack on phones (primary on top) and sit
   right-aligned from `sm`. `useNativeDialog(open)` was extracted from
-  `Modal` (showModal/close + body scroll lock) and is shared by both. Rule:
+  `Modal` (showModal/close + body scroll lock; now in
+  `components/native-dialog.ts`) and is shared by both. Rule:
   **never call `window.confirm` / `alert` / `prompt`** — use
   `ConfirmDialog` for confirmations and the inline `role="alert"` slots
   for errors. `AlertTriangleIcon` added to `icons.tsx`.
@@ -1021,7 +1022,7 @@ Not yet built (immediate next steps):
    (`/?group=…`, same pathname) can show that filtered list up to 5 min
    old with no background refresh; own changes are unaffected.
    (4) done 2026-09-20 — the body scroll lock in `useNativeDialog`
-   (`components/modal.tsx`) is **reference-counted** (module counter
+   (`components/native-dialog.ts`, moved from `modal.tsx` in step 5) is **reference-counted** (module counter
    `scrollLocks`; taken in the effect while `open`, released in its
    cleanup, `overflow` cleared only at zero), so closing a confirm dialog
    stacked over the members `Modal` or `ExpenseScreen` no longer unlocks
@@ -1033,16 +1034,51 @@ Not yet built (immediate next steps):
    are target-only in react-dom 19.2.4), so a confirm dialog rendered
    inside a `Modal` fired the modal's `onClose` too. Every `<dialog>`
    handler (`Modal`, `ConfirmDialog`, `ExpenseScreen`) now returns early
-   unless `isOwnDialogEvent(event)` (`modal.tsx`: `target ===
+   unless `isOwnDialogEvent(event)` (`native-dialog.ts`: `target ===
    currentTarget`); keep that on any new dialog handler, including the
-   `onCancel` guards step 5 adds. (5) **Unsaved-changes guard**: root-layout
-   `UnsavedChangesProvider` + `useUnsavedChanges(dirty)` + `GuardedLink`
-   (`Link` `onNavigate` → `preventDefault` → shared `ConfirmDialog`
-   "Discard changes?" / "Keep editing"), `beforeunload` while dirty,
-   guards on `ExpenseScreen` / `Modal` close paths; the forms that lose
-   input to a tab tap today are the inline ones (`SettleUpForm`,
-   `GroupForm`, `CategoryForm`) — the expense editor is a modal, so tabs
-   are already inert behind it. (6) phone Back closes the expense screen
+   `onCancel` guards step 5 adds. (5) done 2026-09-21, **checked in headless Chromium on a fixture
+   page, not on the signed-in app** — **unsaved-changes guard**
+   (`components/unsaved-changes.tsx`): root-layout `UnsavedChangesProvider`
+   renders the one shared `ConfirmDialog` ("Discard changes?" / "Keep
+   editing" focused / "Discard changes") and adds `beforeunload` **only
+   while something is dirty** (a permanent listener costs bfcache).
+   Dirty forms live in **scopes**: the provider is the page scope, and
+   `ExpenseScreen` / `Modal` wrap their content in a child scope
+   (`useUnsavedScope` + `<UnsavedScope>`) that also reports upward — so
+   closing a dialog asks only about the forms inside it (a dirty inline
+   form elsewhere on the page does not make a clean dialog prompt) while
+   a tab tap asks about everything. API: `useUnsavedChanges(dirty)` for a
+   form (registers while dirty, unregisters on unmount so a save never
+   prompts; returns `confirmDiscard(proceed)` for the form's own Cancel,
+   judged on that form alone), `useGuard(scope?)` → `confirmLeave(proceed)`
+   for whatever leaves (sign out in `AccountMenu`; Escape via `onCancel` +
+   `preventDefault`, back arrow, backdrop and X in the two dialogs).
+   `components/guarded-link.tsx` `GuardedLink` = `next/link` whose
+   `onNavigate` only `preventDefault`s **when dirty** (then
+   `router.push(href)` after the discard), so a clean tap still goes
+   through Next's own navigation and `useLinkStatus` keeps working; its
+   `onNavigate` prop takes no event and runs when the navigation really
+   proceeds — `NavTabs` moved `setTapped` there, so a held-back tab is not
+   highlighted. Used by the tabs, the wordmark, "← All groups" and the
+   group list rows (**a server component may render it, but must not pass
+   it `onNavigate`**). Dirty rules: `GroupForm` / `CategoryForm` /
+   `SettleUpForm` = differs from initial, `AddMember` = email non-empty,
+   `ExpenseForm` = a `touched` flag set by the `<form>`'s bubbling
+   `onChange` (covers every native field, present and future) plus
+   `changeSplitMode`. **The shared dialog is keyed per prompt**: Chromium
+   fires a `<dialog>`'s `close` event on a later animation frame, so with
+   one reused element the stale event from "Keep editing" could land after
+   the next prompt opened and cancel it (seen in the headless run).
+   `useNativeDialog` / `isOwnDialogEvent` moved from `modal.tsx` to
+   **`components/native-dialog.ts`** to break the import cycle modal →
+   unsaved-changes → confirm-dialog → modal (the scroll-lock and
+   nested-event rules of step 4 now live there). Not covered: browser
+   Back (step 6 handles the expense screen), programmatic `router.push`
+   (only used after a save), and discarding via a link to the page you
+   are already on (the form stays mounted with its input). To check on a
+   phone: each inline form + a tab tap, the expense editor's back arrow,
+   and that Chrome's "second Escape always closes" rule never leaves the
+   prompt orphaned over a closed editor. (6) phone Back closes the expense screen
    (`pushState`/`popstate`; drop if fragile). (7) **Atomic save +
    edit conflicts (migration 014; decided 2026-09-20: the second saver is
    rejected and shown the latest, never a silent overwrite).** Today two

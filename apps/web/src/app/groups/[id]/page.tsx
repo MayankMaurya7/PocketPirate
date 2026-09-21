@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +11,7 @@ import { BalanceSummary } from "@/components/balance-summary";
 import { DebtItem } from "@/components/debt-item";
 import { GroupActions, type LeaveBlocker } from "@/components/group-actions";
 import { GroupTimeline } from "@/components/group-timeline";
+import { GuardedLink } from "@/components/guarded-link";
 import { MembersDialog } from "@/components/members-dialog";
 import { SimplifyDebtsToggle } from "@/components/simplify-debts-toggle";
 import {
@@ -151,12 +151,12 @@ export default async function GroupPage({
       <AppHeader email={email} current="groups" />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-[calc(var(--bottom-nav-space)+7rem)] pt-6 sm:pt-10">
-        <Link
+        <GuardedLink
           href="/groups"
           className="text-sm text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
           ← All groups
-        </Link>
+        </GuardedLink>
 
         <div className="mt-3">
           <GroupActions

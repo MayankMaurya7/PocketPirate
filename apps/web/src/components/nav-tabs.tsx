@@ -1,9 +1,10 @@
 "use client";
 
-import Link, { useLinkStatus } from "next/link";
+import { useLinkStatus } from "next/link";
 import { useState } from "react";
 
 import type { Section } from "@/components/app-header";
+import { GuardedLink } from "@/components/guarded-link";
 import { ChartIcon, ReceiptIcon, TagIcon, UsersIcon } from "@/components/icons";
 
 const NAV: {
@@ -42,7 +43,8 @@ export const PREFETCHED_PATHS = NAV.filter((item) => item.prefetch).map(
  * The tapped tab is highlighted the moment it is tapped — before the
  * server has answered — so the tap is acknowledged; the highlight then
  * stays with it as the new page (and its loading skeleton, which renders
- * this same nav) takes over.
+ * this same nav) takes over. A tap that the unsaved-changes guard holds
+ * back lights nothing up until "Discard changes" lets it through.
  */
 export function NavTabs({ current }: { current: Section }) {
   // Where the user is heading, until the route actually changes.
@@ -55,13 +57,13 @@ export function NavTabs({ current }: { current: Section }) {
       className="flex items-stretch max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-10 max-sm:border-t max-sm:border-zinc-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] max-sm:dark:border-zinc-800 max-sm:dark:bg-zinc-900 sm:-mb-px sm:ml-8 sm:self-stretch"
     >
       {NAV.map(({ key, href, label, Icon, prefetch }) => (
-        <Link
+        <GuardedLink
           key={key}
           href={href}
           // `null` is Next's default: prefetch up to the loading skeleton.
           prefetch={prefetch ? true : null}
           aria-current={key === current ? "page" : undefined}
-          onClick={() => setTapped(key)}
+          onNavigate={() => setTapped(key)}
           className={`flex flex-1 items-center justify-center whitespace-nowrap font-medium transition max-sm:h-[var(--bottom-nav-h)] max-sm:flex-col max-sm:gap-0.5 max-sm:text-[11px] sm:flex-none sm:border-b-2 sm:px-3 sm:text-sm ${
             key === active
               ? "max-sm:text-emerald-700 max-sm:dark:text-emerald-400 sm:border-emerald-600 sm:text-zinc-900 sm:dark:border-emerald-500 sm:dark:text-zinc-50"
@@ -70,7 +72,7 @@ export function NavTabs({ current }: { current: Section }) {
         >
           <Icon className="h-5 w-5 sm:hidden" />
           <TabLabel>{label}</TabLabel>
-        </Link>
+        </GuardedLink>
       ))}
     </nav>
   );
