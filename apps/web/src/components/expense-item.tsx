@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -61,6 +61,21 @@ export function ExpenseItem({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped — inside the same transition as the refresh — when the form asks
+  // for the latest version after an edit conflict, so the form remounts
+  // from the refreshed `expense` prop in one commit. Not keyed on
+  // `expense.updated_at`: a background refresh (tab resume, navigation)
+  // landing another member's edit would otherwise remount a form someone
+  // is typing in and lose their input.
+  const [formVersion, setFormVersion] = useState(0);
+  const [reloading, startReload] = useTransition();
+
+  function reloadForm() {
+    startReload(() => {
+      router.refresh();
+      setFormVersion((version) => version + 1);
+    });
+  }
 
   const permission = expenseEditPermission(expense, groups, userId);
   const canEdit = permission.ok;
@@ -252,6 +267,7 @@ export function ExpenseItem({
           title={canEdit ? "Edit expense" : "Expense"}
         >
           <ExpenseForm
+            key={formVersion}
             categories={categories}
             groups={groups}
             userId={userId}
@@ -259,6 +275,8 @@ export function ExpenseItem({
             readOnly={permission.ok ? null : permission.reason}
             activity={activity}
             onDone={() => setOpen(false)}
+            onReload={reloadForm}
+            reloading={reloading}
           />
         </ExpenseScreen>
 

@@ -7,8 +7,30 @@
  * display edge, inside the formatting helpers.
  */
 
-/** Currency snapshotted onto expenses until per-user preference exists. */
+/** Currency a new expense starts in until per-user preference exists. */
 export const DEFAULT_CURRENCY = "INR";
+
+/**
+ * The currencies the expense form offers, ISO 4217 code + English name
+ * (fixed text, like the date tables — never locale-dependent, so server and
+ * browser render the same option labels). Any code works in the database;
+ * this is only the picker's list, with the default first.
+ */
+export const CURRENCIES: readonly { code: string; name: string }[] = [
+  { code: "INR", name: "Indian rupee" },
+  { code: "USD", name: "US dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "British pound" },
+  { code: "AED", name: "UAE dirham" },
+  { code: "SGD", name: "Singapore dollar" },
+  { code: "AUD", name: "Australian dollar" },
+  { code: "CAD", name: "Canadian dollar" },
+  { code: "JPY", name: "Japanese yen" },
+  { code: "THB", name: "Thai baht" },
+  { code: "CHF", name: "Swiss franc" },
+  { code: "MYR", name: "Malaysian ringgit" },
+  { code: "MAD", name: "Moroccan dirham" },
+];
 
 /**
  * Number of minor-unit digits for an ISO 4217 currency (2 for INR/USD,

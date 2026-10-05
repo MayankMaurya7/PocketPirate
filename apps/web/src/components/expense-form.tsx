@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  CURRENCIES,
   DEFAULT_CURRENCY,
   PERCENT_BASIS,
   attributeExpenseDebts,
@@ -30,8 +31,11 @@ import type {
   GroupOption,
 } from "@/lib/types";
 
-const inputClasses =
-  "mt-1.5 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
+/** A text field or select without its layout (margin/width) classes. */
+const fieldClasses =
+  "rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-600";
+
+const inputClasses = `mt-1.5 block w-full ${fieldClasses}`;
 
 const labelClasses =
   "block text-sm font-medium text-zinc-700 dark:text-zinc-300";
@@ -42,6 +46,37 @@ const memberRowClasses =
 
 const amountInputClasses =
   "w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
+
+/**
+ * The currency the last saved expense was in, so a run of expenses abroad
+ * does not need the picker each time. Per browser, a convenience only: the
+ * profile-level preference is in the backlog. Read in a state initialiser,
+ * which is safe because the form only mounts inside an open dialog (never
+ * server-rendered); guarded anyway, and storage may be unavailable.
+ */
+const LAST_CURRENCY_KEY = "pocketpirate:last-currency";
+
+function readLastCurrency(): string {
+  if (typeof window === "undefined") {
+    return DEFAULT_CURRENCY;
+  }
+  try {
+    const stored = window.localStorage.getItem(LAST_CURRENCY_KEY);
+    return stored && CURRENCIES.some((option) => option.code === stored)
+      ? stored
+      : DEFAULT_CURRENCY;
+  } catch {
+    return DEFAULT_CURRENCY;
+  }
+}
+
+function rememberCurrency(currency: string) {
+  try {
+    window.localStorage.setItem(LAST_CURRENCY_KEY, currency);
+  } catch {
+    // Private mode or blocked storage: the default is good enough.
+  }
+}
 
 /** Group picker sentinels: personal expense, or create a group inline. */
 const PERSONAL = "";
@@ -65,9 +100,6 @@ const SPLIT_MODES: { value: SplitMode; label: string }[] = [
 /** Per-member typed values for each of the non-equal modes. */
 type SplitInputs = Record<Exclude<SplitMode, "equal">, Record<string, string>>;
 
-/** A row of either `expense_splits` or `expense_payers`. */
-type AmountRow = { user_id: string; amount_minor_units: number };
-
 /**
  * What a set of inputs produces for the current amount. `amounts` is null
  * while the entry is incomplete or invalid; `error` says why (and is what
@@ -81,14 +113,6 @@ type AmountPlan = {
 
 const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
-
-/** Do the saved rows carry exactly these amounts (same people, same numbers)? */
-function sameAmounts(existing: AmountRow[], amounts: Map<string, number>): boolean {
-  return (
-    existing.length === amounts.size &&
-    existing.every((row) => amounts.get(row.user_id) === row.amount_minor_units)
-  );
-}
 
 /** True when the saved rows are what an equal split of the amount gives. */
 function isEqualSplit(expense: ExpenseListItem): boolean {
@@ -272,11 +296,16 @@ function primaryPayer(payers: Map<string, number>, preferred: string): string {
  * signed-in user — RLS enforces all of it. "Split between" picks the
  * members who share the cost and how — equally, by exact amounts, by shares
  * or by percentages; their shares are `expense_splits` rows that must sum
- * to the amount. Both sums are DB constraints, and the DB also refuses an
- * amount, group or primary-payer change while rows exist, so the save
- * sequences delete splits → delete payers → update → insert payers →
- * insert splits to keep every request boundary valid. Unticking everyone
- * leaves the expense un-split.
+ * to the amount. Both sums are DB constraints. The save is one request —
+ * the `save_expense` RPC (migration 014) writes the row and both row sets
+ * in one transaction, so nothing is ever half-saved — and carries the
+ * `updated_at` the form opened with: if someone else saved the expense
+ * meanwhile the RPC refuses (`PT409`) and the form keeps the typed input,
+ * shows who changed it and offers to load the latest version, which the
+ * parent does by remounting the form from the refreshed row (`onReload`).
+ * Unticking everyone leaves the expense un-split. The currency is picked
+ * per expense (defaulting to the last one saved in this browser) and
+ * snapshotted on the row; a group's balances are kept per currency.
  */
 export function ExpenseForm({
   categories,
@@ -287,6 +316,8 @@ export function ExpenseForm({
   readOnly = null,
   activity = [],
   onDone,
+  onReload,
+  reloading = false,
 }: {
   categories: CategoryOption[];
   groups: GroupOption[];
@@ -296,11 +327,24 @@ export function ExpenseForm({
   readOnly?: string | null;
   activity?: ActivityEntry[];
   onDone: () => void;
+  /**
+   * Remount this form from the latest row after an edit conflict (the
+   * parent refreshes and changes the form's key). Only meaningful with
+   * `expense`; `reloading` is true while that refresh is in flight.
+   */
+  onReload?: () => void;
+  reloading?: boolean;
 }) {
   const router = useRouter();
 
   const initialGroup = expense?.group_id ?? defaultGroupId ?? PERSONAL;
-  const currency = expense?.currency ?? DEFAULT_CURRENCY;
+  const [currency, setCurrency] = useState(() => expense?.currency ?? readLastCurrency());
+  // The picker's list, plus the expense's own currency if it is not in it
+  // (an old row, or a code picked on another client) so the select can
+  // show what is saved.
+  const currencyOptions = CURRENCIES.some((option) => option.code === currency)
+    ? CURRENCIES
+    : [{ code: currency, name: currency }, ...CURRENCIES];
 
   const [amount, setAmount] = useState(
     expense ? minorUnitsToInputValue(expense.amount_minor_units, currency) : "",
@@ -353,15 +397,11 @@ export function ExpenseForm({
     shares: {},
     percent: {},
   }));
-  // Set once a new expense row is written, so a retry after a failed split
-  // insert updates that row instead of creating a second expense.
-  const [savedExpenseId, setSavedExpenseId] = useState<string | null>(null);
-  // Set once a save has deleted payer or split rows, so that if it then
-  // fails, the retry rewrites both sets whatever the (now stale) `expense`
-  // prop says they were.
-  const [rowsDirty, setRowsDirty] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The last save was refused because the row changed (or went) under the
+  // form; `error` then names who changed it and the footer offers a reload.
+  const [conflict, setConflict] = useState(false);
   // Any field changed since the form opened. A flag rather than a diff
   // against `expense`: the inputs are strings and sets derived from it in
   // several steps, and "typed, then typed back" still deserves the prompt
@@ -557,6 +597,7 @@ export function ExpenseForm({
     }
 
     setPending(true);
+    setConflict(false);
     const supabase = createClient();
 
     let groupId: string | null = groupChoice || null;
@@ -575,154 +616,59 @@ export function ExpenseForm({
       }
     }
 
-    const fields = {
-      user_id: payer,
-      group_id: groupId,
-      amount_minor_units: amountMinorUnits,
-      category_id: categoryId || null,
-      expense_date: date,
-      description: description.trim() || null,
-    };
+    const toRows = (amounts: Map<string, number>) =>
+      Array.from(amounts, ([user_id, amount_minor_units]) => ({
+        user_id,
+        amount_minor_units,
+      }));
 
-    const existingId = expense?.id ?? savedExpenseId;
-    // Both row sets must be rewritten when the amount or group changes (the
-    // DB rejects either while rows exist), payers also when the primary
-    // payer changes, and each when its own rows differ. A retried save (no
-    // `expense`, but `savedExpenseId`) or one after a half-done write
-    // (`rowsDirty`) always rewrites both.
-    const rewriteAll =
-      !expense ||
-      rowsDirty ||
-      expense.amount_minor_units !== amountMinorUnits ||
-      expense.group_id !== groupId;
-    const payersChanged =
-      rewriteAll ||
-      expense.user_id !== payer ||
-      !sameAmounts(expense.expense_payers, payerRows);
-    const splitsChanged = rewriteAll || !sameAmounts(expense.expense_splits, shares);
-    // Nothing to clear when the row is known to have none. (Another member
-    // may have edited since this page loaded; a retry after the resulting
-    // error goes through `rowsDirty` and rewrites both sets.)
-    const clearPayers =
-      payersChanged && (!expense || rowsDirty || expense.expense_payers.length > 0);
-    const clearSplits =
-      splitsChanged && (!expense || rowsDirty || expense.expense_splits.length > 0);
+    // One request, one transaction: the row and both row sets land
+    // together or not at all, and the `updated_at` the form opened with
+    // must still be the row's, else the save is refused (PT409) instead
+    // of overwriting someone else's edit. Null `_expected_updated_at`
+    // means create; the id is minted here so the rows can reference it,
+    // and a failed create leaves nothing behind to retry against.
+    const { error: saveError } = await supabase.rpc("save_expense", {
+      _expense: {
+        id: expense?.id ?? crypto.randomUUID(),
+        user_id: payer,
+        group_id: groupId,
+        category_id: categoryId || null,
+        amount_minor_units: amountMinorUnits,
+        currency,
+        expense_date: date,
+        description: description.trim() || null,
+      },
+      _payers: toRows(payerRows),
+      _splits: toRows(shares),
+      _expected_updated_at: expense?.updated_at,
+    });
 
-    let expenseId: string;
-
-    if (existingId) {
-      expenseId = existingId;
-
-      if (clearSplits) {
-        const { error: clearError } = await supabase
-          .from("expense_splits")
-          .delete()
-          .eq("expense_id", expenseId);
-
-        if (clearError) {
-          setError(clearError.message);
-          setPending(false);
-          return;
-        }
-        setRowsDirty(true);
-      }
-
-      if (clearPayers) {
-        const { error: clearError } = await supabase
-          .from("expense_payers")
-          .delete()
-          .eq("expense_id", expenseId);
-
-        if (clearError) {
-          setError(clearError.message);
-          setPending(false);
-          return;
-        }
-        setRowsDirty(true);
-      }
-
-      const { error: updateError } = await supabase
-        .from("expenses")
-        .update(fields)
-        .eq("id", expenseId);
-
-      if (updateError) {
-        setError(updateError.message);
-        setPending(false);
-        return;
-      }
-    } else {
-      // Id minted client-side so the payer and split rows can reference it
-      // without `.select()` on the insert.
-      expenseId = crypto.randomUUID();
-      const { error: insertError } = await supabase
-        .from("expenses")
-        .insert({ ...fields, id: expenseId, created_by: userId, currency });
-
-      if (insertError) {
-        if (groupChoice === NEW_GROUP && groupId) {
-          // The group exists now; point the form at it so a retry doesn't make
-          // a second one, and refresh so it appears in the picker.
-          setGroupChoice(groupId);
-          setNewGroupName("");
-          router.refresh();
-          setError(
-            `${insertError.message} (The group "${trimmedGroupName}" was created.)`,
-          );
-        } else {
-          setError(insertError.message);
-        }
-        setPending(false);
-        return;
-      }
-
-      setSavedExpenseId(expenseId);
-    }
-
-    if (payersChanged && payerRows.size > 0) {
-      const { error: payerError } = await supabase.from("expense_payers").insert(
-        Array.from(payerRows, ([memberId, paid]) => ({
-          expense_id: expenseId,
-          user_id: memberId,
-          amount_minor_units: paid,
-        })),
-      );
-
-      if (payerError) {
-        // The expense itself is saved, paid by the primary payer alone and
-        // not split. Leave the form open so the user can retry; the retry
-        // goes down the update path above and rewrites both row sets.
-        setRowsDirty(true);
+    if (saveError) {
+      if (groupChoice === NEW_GROUP && groupId) {
+        // The group exists now; point the form at it so a retry doesn't make
+        // a second one, and refresh so it appears in the picker.
+        setGroupChoice(groupId);
+        setNewGroupName("");
         router.refresh();
-        setError(
-          `${payerError.message} (The expense was saved as paid by one person and without a split — try again.)`,
-        );
-        setPending(false);
-        return;
       }
+      if (saveError.code === "PT409") {
+        setConflict(true);
+        setError(saveError.message);
+      } else if (groupChoice === NEW_GROUP) {
+        setError(
+          `${saveError.message} (The group "${trimmedGroupName}" was created.)`,
+        );
+      } else {
+        // Incl. PT403 ("You can no longer edit this expense."), a sum
+        // mismatch the plans should have caught, or a network failure.
+        setError(saveError.message);
+      }
+      setPending(false);
+      return;
     }
 
-    if (splitsChanged && shares.size > 0) {
-      const { error: splitError } = await supabase.from("expense_splits").insert(
-        Array.from(shares, ([memberId, share]) => ({
-          expense_id: expenseId,
-          user_id: memberId,
-          amount_minor_units: share,
-        })),
-      );
-
-      if (splitError) {
-        // The expense (and its payers) are saved, un-split. Same retry path.
-        setRowsDirty(true);
-        router.refresh();
-        setError(
-          `${splitError.message} (The expense was saved without a split — try again.)`,
-        );
-        setPending(false);
-        return;
-      }
-    }
-
+    rememberCurrency(currency);
     // Re-run the server components so the list reflects the change.
     router.refresh();
     onDone();
@@ -814,18 +760,32 @@ export function ExpenseForm({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="amount" className={labelClasses}>
-              Amount ({currency})
+              Amount
             </label>
-            <input
-              id="amount"
-              type="text"
-              inputMode="decimal"
-              required
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              placeholder="0.00"
-              className={inputClasses}
-            />
+            <div className="mt-1.5 flex gap-2">
+              <input
+                id="amount"
+                type="text"
+                inputMode="decimal"
+                required
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="0.00"
+                className={`${fieldClasses} min-w-0 flex-1`}
+              />
+              <select
+                aria-label="Currency"
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value)}
+                className={`${fieldClasses} shrink-0 pl-2 pr-7`}
+              >
+                {currencyOptions.map((option) => (
+                  <option key={option.code} value={option.code} title={option.name}>
+                    {option.code}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -1164,12 +1124,27 @@ export function ExpenseForm({
 
       <div className="shrink-0 border-t border-zinc-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 dark:border-zinc-800 dark:bg-zinc-900 sm:px-5">
         {error && (
-          <p
+          <div
             role="alert"
             className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
           >
-            {error}
-          </p>
+            <p>{error}</p>
+            {conflict && onReload && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="text-red-600/80 dark:text-red-300/80">
+                  Your changes are kept here until you reload.
+                </span>
+                <button
+                  type="button"
+                  onClick={onReload}
+                  disabled={pending || reloading}
+                  className="font-medium underline underline-offset-2 hover:text-red-800 disabled:no-underline disabled:opacity-60 dark:hover:text-red-200"
+                >
+                  {reloading ? "Loading…" : "Load latest version"}
+                </button>
+              </p>
+            )}
+          </div>
         )}
         <div className="flex gap-3">
           {readOnly === null && (

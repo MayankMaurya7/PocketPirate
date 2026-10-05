@@ -956,8 +956,8 @@ Done and on `main`:
 
 - **Migration 014 — atomic save + edit conflicts** applied 2026-10-05
   (verified first in a rolled-back `db query` run of the migration + a
-  17-case DO block; **the client still does the five-request save** —
-  switching it is the next step). `public.save_expense(_expense jsonb,
+  17-case DO block; the client switched to it 2026-10-05, see "Atomic
+  save client" below). `public.save_expense(_expense jsonb,
   _payers jsonb, _splits jsonb, _expected_updated_at timestamptz) returns
   public.expenses`, **SECURITY INVOKER** (every policy, `guard_expense_update`,
   the activity and deferred sum triggers apply as they do to direct
@@ -999,6 +999,50 @@ Done and on `main`:
   row's `updated_at` in a verification run, disable the `set_updated_at`
   trigger around the update — a plain update as postgres is overridden
   by it, and inside one transaction `now()` never moves.
+
+- **Atomic save client + currency picker** (2026-10-05; typecheck, lint
+  and build only — **not seen in a browser**, signed-in pages need a
+  Google session). `ExpenseForm` saves with one
+  `supabase.rpc("save_expense", { _expense, _payers, _splits,
+  _expected_updated_at: expense?.updated_at })` (undefined on create is
+  dropped by JSON.stringify → null → create path; the id is still minted
+  client-side, once per submit, since a failed create persists nothing);
+  the inline "+ New group…" insert stays a separate request before it and
+  still re-targets the form at the new group if the save then fails.
+  Gone: `savedExpenseId`, `rowsDirty`, `sameAmounts`, the clear/insert
+  sequencing and the half-saved error copy. On `error.code === "PT409"`
+  the form stays open with the typed input, the message ("Arihant changed
+  this expense while you were editing.") renders in the footer's
+  `role="alert"` slot with "Your changes are kept here until you reload"
+  and a **"Load latest version"** button → `onReload`; `ExpenseItem`
+  implements it as `startTransition(() => { router.refresh();
+  setFormVersion(v => v + 1) })` with the form keyed on `formVersion`, so
+  the remount and the fresh `expense` prop land in one commit and the
+  button reads "Loading…" meanwhile (`reloading` prop). **Deliberately
+  not keyed on `expense.updated_at`**: the background refreshes (resume,
+  navigation) would remount a form someone is typing in. A deleted
+  expense's reload simply removes the row (and the screen with it).
+  `PT403` and everything else is a plain inline error. `SettleUpForm`
+  edit adds `.eq("updated_at", settlement.updated_at)`; zero rows → one
+  `select updated_at` read tells deleted / changed ("Cancel and open it
+  again…") / not permitted apart, then `router.refresh()` so the row
+  behind the inline form is current. **The `PTnnn` → `error.code`
+  propagation is still assumed from PostgREST docs, not yet observed from
+  the browser.** **Currency picker**: `CURRENCIES` (13 codes + fixed
+  English names, INR first) in `packages/shared/src/money.ts`; the
+  Amount field is now input + a code-only `<select aria-label="Currency">`
+  in the same grid cell (`fieldClasses` = `inputClasses` without
+  `mt-1.5 block w-full`, since Tailwind v4 does not reliably let a later
+  `mt-0` override); an expense whose saved code is not in the list is
+  prepended so the select can show it. The RPC always writes `currency`,
+  so editing can change it (balances are per currency already; the trail
+  already logs a `currency` change). New expenses default to the **last
+  currency saved in this browser** (`localStorage`
+  `pocketpirate:last-currency`, read in a state initialiser — safe only
+  because the form never server-renders; guarded with try/catch) else
+  `DEFAULT_CURRENCY`; the profile-level preference stays in the backlog.
+  Typed amounts are kept as strings across a currency switch, so "12.50"
+  under JPY just fails the live validation until fixed.
 
 Not yet built (immediate next steps):
 0. **Feedback plan, remaining steps** (approved 2026-09-19; one step per
@@ -1153,28 +1197,12 @@ Not yet built (immediate next steps):
    does this; the members `Modal` and inline forms still lose to Back.
    To check on a phone: iOS edge-swipe and Android Back on a clean and a
    dirty editor, "Keep editing" then Back again, and that after a save
-   one Back leaves the page (no leftover entry). (7) **Atomic save +
-   edit conflicts — migration half done 2026-10-05 (see "Migration 014"
-   above), client half next** (decided 2026-09-20: the second saver is
-   rejected and shown the latest, never a silent overwrite). Until the
-   client switches, two members saving one expense seconds apart still
-   get the silent overwrite / raw sum-check error. To do: `ExpenseForm`
-   replaces the five requests with one
-   `supabase.rpc("save_expense", { _expense, _payers, _splits,
-   _expected_updated_at: expense?.updated_at ?? undefined })` (keep the
-   client-minted id; `EXPENSE_SELECT` is `*` so `updated_at` is on the
-   prop; the inline "+ New group…" insert stays a separate request
-   before it), drops `rowsDirty` / `savedExpenseId` / `clearSplits` /
-   `clearPayers` and the half-saved error copy; on `error.code ===
-   "PT409"` keep the form open with the user's input and show the message
-   inline (`role="alert"`) with a **"Load latest version"** button that
-   `router.refresh()`es and remounts the form from the fresh `expense`
-   prop (key it on `updated_at`); `PT403` is a plain error. `SettleUpForm`
-   edit adds `.eq("updated_at", settlement.updated_at)` and the existing
-   zero-rows path says the payment changed meanwhile. **The `PTnnn` →
-   HTTP-status mapping is assumed from PostgREST docs, not yet seen from
-   the browser** — `error.code` carries the SQLSTATE either way, so key on
-   that. Backlog from this batch: an `(app)`
+   one Back leaves the page (no leftover entry). (7) done 2026-10-05 (migration 014 + "Atomic save client" above;
+   decided 2026-09-20: the second saver is rejected and shown the latest,
+   never a silent overwrite). **Untested in a browser**: two sessions
+   editing one expense should see the PT409 message and a working "Load
+   latest version"; also check the currency select fits beside the amount
+   at 375px. Backlog from this batch: an `(app)`
    route-group layout owning the header, `sessionStorage` drafts, and the
    **Phase 3 data layer — TanStack Query (per-key cache) + Supabase
    Realtime (per-group change signal) in `packages/shared` for web and

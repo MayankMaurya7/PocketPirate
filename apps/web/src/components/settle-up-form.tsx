@@ -32,6 +32,9 @@ const labelClasses =
  * payment around. Who may do either follows the group's edit policy
  * (migration 012): any member, or only the two parties; never once a
  * party has left. RLS checks it; `SettlementItem` only offers it then.
+ * The edit also sends the `updated_at` the form opened with (migration
+ * 014): a payment someone else changed meanwhile matches zero rows and is
+ * reported as such instead of being overwritten.
  */
 export function SettleUpForm(
   props: {
@@ -98,8 +101,9 @@ export function SettleUpForm(
 
     const supabase = createClient();
     if (props.settlement) {
-      // RLS filters rather than errors when the row may not be edited, so
-      // ask for the row back to tell "saved" from "silently skipped".
+      // RLS filters rather than errors when the row may not be edited, and
+      // so does the version check, so ask for the row back to tell "saved"
+      // from "silently skipped".
       const { data, error: updateError } = await supabase
         .from("settlements")
         .update({
@@ -108,13 +112,30 @@ export function SettleUpForm(
           note: note.trim() || null,
         })
         .eq("id", props.settlement.id)
+        .eq("updated_at", props.settlement.updated_at)
         .select("id")
         .maybeSingle();
 
-      if (updateError || !data) {
+      if (updateError) {
+        setError(updateError.message);
+        setPending(false);
+        return;
+      }
+      if (!data) {
+        // Zero rows: changed under us, deleted, or no longer ours to edit.
+        // One read tells which; refresh so the row behind the form is current.
+        const { data: current } = await supabase
+          .from("settlements")
+          .select("updated_at")
+          .eq("id", props.settlement.id)
+          .maybeSingle();
+        router.refresh();
         setError(
-          updateError?.message ??
-            "This payment can't be changed: only the two people involved can edit it, and both must still be in the group.",
+          current === null
+            ? "This payment was deleted while you were editing."
+            : current.updated_at !== props.settlement.updated_at
+              ? "This payment was changed while you were editing. Cancel and open it again to see the latest version."
+              : "This payment can't be changed: only the two people involved can edit it, and both must still be in the group.",
         );
         setPending(false);
         return;
