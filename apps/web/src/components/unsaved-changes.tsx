@@ -25,8 +25,9 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
  * while a tab tap asks about every form on the page. A form unregisters
  * when it unmounts or turns clean, so a successful save never prompts.
  *
- * Not covered: the browser's Back button and programmatic `router.push`
- * (only used after a save).
+ * Not covered: the browser's Back button outside the expense screen (which
+ * handles it itself, `useBackToClose`) and programmatic `router.push` (only
+ * used after a save).
  */
 
 /** The dirty forms inside one part of the page. Never read during render. */

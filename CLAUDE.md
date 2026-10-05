@@ -954,6 +954,52 @@ Done and on `main`:
   above the keyboard while an inline form has focus (if ugly: hide the
   bar while an input is focused).
 
+- **Migration 014 — atomic save + edit conflicts** applied 2026-10-05
+  (verified first in a rolled-back `db query` run of the migration + a
+  17-case DO block; **the client still does the five-request save** —
+  switching it is the next step). `public.save_expense(_expense jsonb,
+  _payers jsonb, _splits jsonb, _expected_updated_at timestamptz) returns
+  public.expenses`, **SECURITY INVOKER** (every policy, `guard_expense_update`,
+  the activity and deferred sum triggers apply as they do to direct
+  writes; EXECUTE to `authenticated` only). `_expense` = `{id?, user_id,
+  group_id, category_id, amount_minor_units, currency, expense_date,
+  description}` (all keys required, `id` minted if absent); `_payers` /
+  `_splits` = `[{user_id, amount_minor_units}]`, empty = one payer / not
+  split. Null `_expected_updated_at` = create. Edit: `select … for update`
+  (RLS applies the UPDATE policy's USING to it, so a non-editor finds no
+  row) then the version check, then delete splits → delete payers →
+  update → insert payers → insert splits; the UPDATE always runs so
+  `updated_at` always moves (a split-only edit used to leave it
+  untouched). Errors are user-facing with **PostgREST `PTnnn` SQLSTATEs**
+  (passed to the client as `error.code`, and mapped to that HTTP status):
+  `PT409` = "Arihant Jain changed this expense while you were editing."
+  (last editor from `group_activity`, display name → email; "You changed
+  this expense elsewhere…" when it was the caller; "This expense was
+  changed…" with no trail, e.g. personal) / "This expense was deleted
+  while you were editing." (also what an outsider gets); `PT403` = "You
+  can no longer edit this expense." (visible but not editable, e.g.
+  `parties` policy); `PT401` = no JWT. A sum mismatch fails the whole
+  save at PostgREST's commit and nothing persists. **Activity-trail merge
+  rule unchanged** in one transaction (`now()` fixed, `clock_timestamp()`
+  strict, window trivially met): an edit is one entry with e.g.
+  `amount + split`, an unchanged re-save logs nothing but still bumps
+  `updated_at`. **The 004/008 "refuse a group change while rows exist"
+  rule had to go**: in one transaction the rows inserted after the update
+  are there at commit, so it refused every atomic move into a group.
+  `check_expense_matches_splits` / `_payers` now require, on a group
+  change, every split/payer user to be a member of the *new* group
+  ("Everyone who shares / paid this expense must be a member of the group
+  it moves to."); rows on a personal expense are still refused by the
+  asserts. `settlements.updated_at` (not null, backfilled = `created_at`,
+  `settlements_set_updated_at` BEFORE UPDATE via `set_updated_at`;
+  readable through the table SELECT grant, not in 010's column-level
+  UPDATE grant so only the trigger writes it — a client write is 42501).
+  Types regenerated (`save_expense` typed as returning an `expenses` row;
+  `Tables<"settlements">` gains `updated_at`). Test-side lesson: to age a
+  row's `updated_at` in a verification run, disable the `set_updated_at`
+  trigger around the update — a plain update as postgres is overridden
+  by it, and inside one transaction `now()` never moves.
+
 Not yet built (immediate next steps):
 0. **Feedback plan, remaining steps** (approved 2026-09-19; one step per
    session, full text in `~/.claude/plans/ok-before-we-cryptic-lollipop.md`):
@@ -1078,22 +1124,57 @@ Not yet built (immediate next steps):
    are already on (the form stays mounted with its input). To check on a
    phone: each inline form + a tab tap, the expense editor's back arrow,
    and that Chrome's "second Escape always closes" rule never leaves the
-   prompt orphaned over a closed editor. (6) phone Back closes the expense screen
-   (`pushState`/`popstate`; drop if fragile). (7) **Atomic save +
-   edit conflicts (migration 014; decided 2026-09-20: the second saver is
-   rejected and shown the latest, never a silent overwrite).** Today two
-   members saving one expense seconds apart keep balances correct (sum
-   triggers) and both edits land in History, but the second save writes
-   *every* field from its stale form — a silent overwrite, or a raw,
-   un-retryable sum-check error when the first changed the amount. Fix:
-   `save_expense(_expense, _payers, _splits, _expected_updated_at)`,
-   SECURITY INVOKER (RLS and all triggers apply as now), `select … for
-   update` + version check raising a distinct SQLSTATE with "X changed
-   this expense while you were editing.", all five writes in one
-   transaction, always bumping `updated_at`; the form makes one RPC call
-   (drops `rowsDirty` / `savedExpenseId` / half-saved errors) and offers
-   "Load latest version". Payments: add `settlements.updated_at` and
-   `.eq("updated_at", …)` on edit. Backlog from this batch: an `(app)`
+   prompt orphaned over a closed editor. (6) done 2026-09-21, **checked in headless
+   Chromium + WebKit on a fixture page under dev strict mode (24 checks
+   each), not on a phone** — **phone Back closes the expense screen**
+   (`useBackToClose` in `components/expense-screen.tsx`): opening pushes
+   one history entry **without a URL** (Next's patched `pushState` then
+   copies its router state into it and dispatches nothing; the later
+   `popstate` is a traverse to the URL + tree already shown, so neither
+   the page nor the form remounts — verified). Back on a clean form
+   closes; on a dirty form it asks through the screen's own scope
+   (`scope.dirty` → `confirmLeave(onClose)`) and **restores the entry
+   with `history.forward()`, not a fresh `pushState`** (a push with no
+   tap before it is what Chrome's history-manipulation intervention
+   punishes by skipping entries on the next Back). A UI close (arrow,
+   Cancel, Save, Discard) removes the entry with one `history.back()`,
+   deferred by a 0 ms timeout so a strict-mode effect re-run or an
+   instant reopen reuses the entry instead of racing a pending
+   traversal, and skipped when the URL has changed. Own traversals are
+   counted in a module variable and counted off by **one permanent
+   module-level `popstate` listener** — a per-screen listener is gone by
+   the time the close's own `back()` event arrives, which left the
+   counter stuck and swallowed the next real Back (caught by the test).
+   **Nothing is stored in `history.state`**: `router.refresh()` rewrites
+   the current entry's state (`preserveCustomHistoryState: false`), so a
+   marker would vanish on every background refresh. On Android Chrome
+   hands Back to the open `<dialog>` as `cancel` first (already guarded
+   in step 5), so the `popstate` path is mainly iOS. Only `ExpenseScreen`
+   does this; the members `Modal` and inline forms still lose to Back.
+   To check on a phone: iOS edge-swipe and Android Back on a clean and a
+   dirty editor, "Keep editing" then Back again, and that after a save
+   one Back leaves the page (no leftover entry). (7) **Atomic save +
+   edit conflicts — migration half done 2026-10-05 (see "Migration 014"
+   above), client half next** (decided 2026-09-20: the second saver is
+   rejected and shown the latest, never a silent overwrite). Until the
+   client switches, two members saving one expense seconds apart still
+   get the silent overwrite / raw sum-check error. To do: `ExpenseForm`
+   replaces the five requests with one
+   `supabase.rpc("save_expense", { _expense, _payers, _splits,
+   _expected_updated_at: expense?.updated_at ?? undefined })` (keep the
+   client-minted id; `EXPENSE_SELECT` is `*` so `updated_at` is on the
+   prop; the inline "+ New group…" insert stays a separate request
+   before it), drops `rowsDirty` / `savedExpenseId` / `clearSplits` /
+   `clearPayers` and the half-saved error copy; on `error.code ===
+   "PT409"` keep the form open with the user's input and show the message
+   inline (`role="alert"`) with a **"Load latest version"** button that
+   `router.refresh()`es and remounts the form from the fresh `expense`
+   prop (key it on `updated_at`); `PT403` is a plain error. `SettleUpForm`
+   edit adds `.eq("updated_at", settlement.updated_at)` and the existing
+   zero-rows path says the payment changed meanwhile. **The `PTnnn` →
+   HTTP-status mapping is assumed from PostgREST docs, not yet seen from
+   the browser** — `error.code` carries the SQLSTATE either way, so key on
+   that. Backlog from this batch: an `(app)`
    route-group layout owning the header, `sessionStorage` drafts, and the
    **Phase 3 data layer — TanStack Query (per-key cache) + Supabase
    Realtime (per-group change signal) in `packages/shared` for web and

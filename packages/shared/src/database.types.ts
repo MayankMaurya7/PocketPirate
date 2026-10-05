@@ -426,6 +426,7 @@ export type Database = {
           note: string | null
           settled_on: string
           to_user_id: string
+          updated_at: string
         }
         Insert: {
           amount_minor_units: number
@@ -438,6 +439,7 @@ export type Database = {
           note?: string | null
           settled_on?: string
           to_user_id: string
+          updated_at?: string
         }
         Update: {
           amount_minor_units?: number
@@ -450,6 +452,7 @@ export type Database = {
           note?: string | null
           settled_on?: string
           to_user_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -502,6 +505,36 @@ export type Database = {
           invited_by: string
           member_count: number
         }[]
+      }
+      save_expense: {
+        Args: {
+          _expected_updated_at?: string
+          _expense: Json
+          _payers?: Json
+          _splits?: Json
+        }
+        Returns: {
+          amount_minor_units: number
+          category_id: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          description: string | null
+          expense_date: string
+          group_id: string | null
+          id: string
+          rejected_at: string | null
+          source: Database["public"]["Enums"]["expense_source"]
+          status: Database["public"]["Enums"]["expense_status"]
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "expenses"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       set_simplify_debts: {
         Args: { _enabled: boolean; _group_id: string }
