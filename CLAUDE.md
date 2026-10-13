@@ -379,8 +379,16 @@ Done and on `main`:
   up** (see "Mobile layout" below): on phones the actions wrap onto their
   own line under the amount (`w-full` + `flex-wrap` on the row; a row
   without actions renders a `hidden sm:block` placeholder instead) and the
-  debt row stacks amount over button, so amounts still share the right
-  edge without stealing width from the name.
+  debt row's button wraps onto its own line under the amount
+  (`max-sm:basis-full`; a row without a button renders no line,
+  `max-sm:hidden`), so amounts still share the right edge without stealing
+  width from the name. **Member rows carry no right-aligned amount** since
+  2026-10-14 (their figures live in the full-width strip); the `w-7` slot
+  stays so name lines end at the same place. **Name sentences never
+  `truncate`**: "X owes Y" (`DebtItem`) and "X paid Y" (`SettlementItem`)
+  are `break-words` and wrap to a second line — a clipped name is useless
+  (phone screenshot 2026-10-14: "nitin yadav owes y…"). Only descriptions,
+  emails and meta lines may truncate.
 
 - **Migration 007** applied — leave/remove guards on `group_members`:
   `group_members_guard_delete`, a BEFORE DELETE row trigger
@@ -1043,6 +1051,39 @@ Done and on `main`:
   `DEFAULT_CURRENCY`; the profile-level preference stays in the backlog.
   Typed amounts are kept as strings across a currency switch, so "12.50"
   under JPY just fails the live validation until fixed.
+
+- **Group spending: paid / share per member** (2026-10-14; helper checked
+  in Node, layout confirmed by the user on a phone the same day). From group
+  feedback: members wanted, out of the group's total, their **share** (sum
+  of their split shares) and what they **paid** out of pocket, not just the
+  net. `packages/shared/src/spending.ts`: `groupSpending(expenses)` →
+  `{ byMember: Map<userId, SpendingEntry[]>, totals }` (`SpendingEntry` =
+  `{currency, paid, share}`, one per currency, members on no expense
+  absent) and `sumSpending(lists)`. Rules (decided with the user): payers
+  from `expensePayers` (multi-payer rows honoured); shares from
+  `expense_splits`; an **un-split group expense counts as the payer's own**
+  (paid = share = their amount), so Σ paid = Σ share = the Activity
+  header's total; **recorded payments are excluded** (not spending), so
+  paid − share = the net balance only until someone settles up.
+  `groupLedger` is untouched (balances still ignore un-split expenses).
+  UI: `MemberItem` (prop `spending`) renders a **labelled figures strip
+  on its own full-width line** under the name/email line — PAID / SHARE /
+  BALANCE (balance cell only while the group has anything split or paid;
+  green +, red −, "Settled up" muted; one `<dl>` per currency with the
+  code suffixed to the labels when there are several; nothing when the
+  member has no spending and no balance). The strip replaced the
+  right-hand balance column at every width (2026-10-14, phone screenshot:
+  a comma sentence beside the balance column truncated to "Paid
+  ₹43,131.00, sh…"); from `sm` it is indented `pl-13` (avatar + gap) to
+  sit under the name. `MembersDialog` (props `spending`,
+  `formerSpending`) adds "Paid and share count expenses only, not recorded
+  payments." to its intro and, under the list, one "Former members: paid …,
+  share …" line when people who left still carry spending (keeps the sums
+  honest); the group page's Activity header gains "Your share ₹3,000, you
+  paid ₹4,500" for the viewer when non-zero. All-time, no date filter.
+  Verified the helper via a throwaway `.mjs` (dinner 900 split 3 + taxi
+  300 un-split → A 1200/600, B 0/300, sums reconcile; multi-payer split and
+  un-split; two currencies; former-member bucket; empty input).
 
 Not yet built (immediate next steps):
 0. **Feedback plan, remaining steps** (approved 2026-09-19; one step per

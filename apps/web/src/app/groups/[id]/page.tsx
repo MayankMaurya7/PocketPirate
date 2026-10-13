@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
+import { formatMinorUnits, groupSpending, sumSpending } from "@expense-tracker/shared";
+
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/expense-filters";
 import { groupLedger } from "@/lib/balances";
@@ -128,6 +130,16 @@ export default async function GroupPage({
   const { debts, balances } = groupLedger(expenseList, settlementList, {
     simplify: group.simplify_debts,
   });
+  // What each member paid and what their share came to (expenses only, no
+  // payments; an un-split expense counts as the payer's own). Shares of
+  // members who have since left still sit in the data, so they are summed
+  // into one "former members" line to keep the dialog's sums honest.
+  const { byMember: spending } = groupSpending(expenseList);
+  const memberIds = new Set(members.map((member) => member.user_id));
+  const formerSpending = sumSpending(
+    [...spending].filter(([id]) => !memberIds.has(id)).map(([, entries]) => entries),
+  );
+  const mySpending = spending.get(userId) ?? [];
   const myDebts = debts.filter(
     (debt) => debt.from === userId || debt.to === userId,
   );
@@ -176,6 +188,8 @@ export default async function GroupPage({
             editPolicy={group.edit_policy}
             balances={balances}
             showBalances={hasLedger}
+            spending={spending}
+            formerSpending={formerSpending}
             invite={inviteLink}
           />
         </div>
@@ -231,6 +245,23 @@ export default async function GroupPage({
               </span>
             )}
           </h2>
+          {mySpending.length > 0 && (
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              {mySpending.map((entry, index) => (
+                <span key={entry.currency}>
+                  {index > 0 && " · "}
+                  Your share{" "}
+                  <span className="tabular-nums">
+                    {formatMinorUnits(entry.share, entry.currency)}
+                  </span>
+                  , you paid{" "}
+                  <span className="tabular-nums">
+                    {formatMinorUnits(entry.paid, entry.currency)}
+                  </span>
+                </span>
+              ))}
+            </p>
+          )}
 
           <div className="mt-3">
             <GroupTimeline

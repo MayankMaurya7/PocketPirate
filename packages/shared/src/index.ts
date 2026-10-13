@@ -23,3 +23,6 @@ export * from "./stats";
 
 /** Who owes whom for one split expense (the rule the database also uses). */
 export * from "./ledger";
+
+/** What each group member paid and what their share came to. */
+export * from "./spending";

@@ -103,7 +103,7 @@ export function SettlementItem({
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+        <p className="break-words text-sm text-zinc-900 dark:text-zinc-100">
           <span className="font-medium">{paidBy}</span> paid{" "}
           <span className="font-medium">{paidTo}</span>
         </p>

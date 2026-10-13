@@ -8,6 +8,8 @@ import { InviteLink } from "@/components/invite-link";
 import { MemberItem } from "@/components/member-item";
 import { Modal } from "@/components/modal";
 import { UsersIcon } from "@/components/icons";
+import { formatMinorUnits, type SpendingEntry } from "@expense-tracker/shared";
+
 import type { BalanceEntry } from "@/lib/balances";
 import type { GroupEditPolicy, GroupInvite, GroupMember } from "@/lib/types";
 
@@ -25,6 +27,8 @@ export function MembersDialog({
   editPolicy,
   balances,
   showBalances,
+  spending,
+  formerSpending,
   invite,
 }: {
   groupId: string;
@@ -34,6 +38,10 @@ export function MembersDialog({
   editPolicy: GroupEditPolicy;
   balances: Map<string, BalanceEntry[]>;
   showBalances: boolean;
+  /** What each member paid / their share, per currency (expenses only). */
+  spending: Map<string, SpendingEntry[]>;
+  /** The same for members who have since left, summed; empty = nobody. */
+  formerSpending: SpendingEntry[];
   /** The group's current invite link; only fetched for (and shown to) owners. */
   invite: GroupInvite | null;
 }) {
@@ -51,9 +59,11 @@ export function MembersDialog({
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Members">
-        {showBalances && (
+        {(showBalances || spending.size > 0) && (
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Net position in the group: green is owed, red owes.
+            {showBalances && "Net position in the group: green is owed, red owes. "}
+            {spending.size > 0 &&
+              "Paid and share count expenses only, not recorded payments."}
           </p>
         )}
 
@@ -76,9 +86,23 @@ export function MembersDialog({
               balance={
                 showBalances ? (balances.get(member.user_id) ?? []) : undefined
               }
+              spending={spending.get(member.user_id) ?? []}
             />
           ))}
         </ul>
+
+        {formerSpending.length > 0 && (
+          <p className="mt-2 px-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Former members:{" "}
+            {formerSpending.map((entry, index) => (
+              <span key={entry.currency} className="tabular-nums">
+                {index > 0 && " · "}
+                paid {formatMinorUnits(entry.paid, entry.currency)}, share{" "}
+                {formatMinorUnits(entry.share, entry.currency)}
+              </span>
+            ))}
+          </p>
+        )}
       </Modal>
     </>
   );
